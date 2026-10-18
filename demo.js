@@ -17,6 +17,7 @@
       const d = S.answers['/api/cameras'].director; d.recording = null; d.streaming = null; d.since = now();
     }
     S.kinds = recorded.__kinds__ || {};
+    S.recordedFocus = recorded['/api/cameras'].director.camera_focus || {};
     delete S.answers.__kinds__;
     return S;
   });
@@ -57,6 +58,7 @@
   function read(path, query) {
     const a = S.answers;
     if (path === '/api/stage') return { ...a['/api/stage'], director: director() };
+    if (path === '/api/stage/place') return placing();
     if (path === '/api/temperatures') {
       const exact = a[`${path}?${query}`]; if (exact) return exact;
       const key = Object.keys(a).find(k => k.startsWith('/api/temperatures?')); return key ? a[key] : { cameras: [] };
@@ -97,6 +99,7 @@
     const d = director(), t = now();
     if ('take' in body) { cutTo(body.take); d.hold_until = d.enabled ? t + 10 : null; }
     if ('enabled' in body) { d.enabled = !!body.enabled; S.nextCut = t + 6; }
+    if (body.camera_focus && typeof body.camera_focus === 'object') focusPost(body.camera_focus);
     if ('record' in body) {
       if (body.record) { S.recStart = t; d.recording = { started: t, seconds: 0, file: 'demo-programme.mkv' }; d.cuts = 0; }
       else d.recording = null;
@@ -111,12 +114,80 @@
     const kind = S.kinds[body.mode]; if (!kind) return answer({ detail: 'Unknown kind of event' }, 400);
     const live = director(), liveCams = cams().cameras;
     S.answers['/api/event-mode'] = copy(kind['/api/event-mode']);
-    S.answers['/api/stage'] = { ...copy(kind['/api/stage']), layout: S.answers['/api/stage'].layout, widths: S.answers['/api/stage'].widths };
+    S.answers['/api/stage'] = { ...copy(kind['/api/stage']), layout: S.answers['/api/stage'].layout, widths: S.answers['/api/stage'].widths, room: S.answers['/api/stage'].room };
     const fresh = copy(kind['/api/cameras']);
     for (const k of ['on_air', 'pair', 'scene', 'since', 'enabled', 'recording', 'streaming', 'hold_until', 'cuts']) fresh.director[k] = live[k];
     fresh.cameras.forEach(c => { const was = liveCams.find(x => x.id === c.id); if (was) c.telemetry = was.telemetry; });
     S.answers['/api/cameras'] = fresh;
     tick(); save(); return answer(S.answers['/api/event-mode']);
+  }
+  // Stage Shots: its layout and room map, a camera at a time and field by field, a field set to null going back to its
+  // default (or, for x and y on the room map, taking the camera off it), as stageplot.arranged and roommap.arranged do.
+  function stagePost(body) {
+    const st = S.answers['/api/stage'];
+    for (const [id, entry] of Object.entries(body.layout || {})) {
+      const changed = { ...(st.layout[id] || {}) };
+      for (const [field, value] of Object.entries(entry || {})) {
+        if (field === 'y') continue;
+        if (value === null) { delete changed[field]; if (field === 'x') delete changed.y; }
+        else if (field === 'x') { changed.x = value; changed.y = entry.y; } else changed[field] = value;
+      }
+      if (Object.keys(changed).length) st.layout[id] = changed; else delete st.layout[id];
+    }
+    if (body.widths) st.widths = { ...(st.widths || {}), ...body.widths };
+    const room = st.room;
+    for (const [id, entry] of Object.entries((room && body.room) || {})) {
+      if ('x' in entry && entry.x === null) { delete room.map[id]; delete room.derived[id]; continue; }
+      const changed = { ...(room.map[id] || {}), ...entry };
+      if (entry.fov === null) delete changed.fov;
+      room.map[id] = changed;
+      // What Stage Shots takes from it: the mark's aim follows; where it stands round the edge stays as recorded.
+      if (room.derived[id]?.cam && 'aim' in entry) room.derived[id].cam.aim = entry.aim;
+    }
+    save(); return answer(read('/api/stage'));
+  }
+  // What each camera is there to show, as the director page and Stage Shots' who-is-who buttons set it.
+  function focusPost(given) {
+    const d = director(), focus = { ...(d.camera_focus || {}), ...given };
+    for (const [id, keys] of Object.entries(focus)) if (!keys.length) delete focus[id];
+    d.camera_focus = focus;
+    const names = { ...(S.answers['/api/stage/place'] || {}).names };
+    for (const c of S.answers['/api/stage'].cameras) (S.recordedFocus[c.id] || []).forEach((key, i) => { names[key] = names[key] || c.instruments[i]; });
+    for (const c of S.answers['/api/stage'].cameras) if (c.id in given) c.instruments = (focus[c.id] || []).map(key => names[key] || key.replace(/^custom:/, ''));
+  }
+
+  // Stage Shots' "Place from the wide shot" (experimental): a few seconds of looking, then what the demonstration
+  // manager found from its wide camera (Centre Wide). Its answers change from one look to the next, as its director
+  // zooms, so these are copied from its looks (2026-10-18), the picture they are drawn over is the one build.py's look
+  // recorded, and anything else is the recording's. From another camera nothing was recorded.
+  const LOOK = { rounds: 5, round: 1.2, naming: 2 };
+  const FOUND = {
+    'a76e3060-1ffb-5873-895c-3151261352ac': { found: true, left: 0.0788, right: 0.4406, outline: [[0.0796, 0.3196], [0.4398, 0.3194], [0.4406, 0.6788], [0.0788, 0.6791]], turn: -15, matches: 45, rounds: 5, agreeing: 5, layout: { x: 0.214, y: 0.55, w: 0.43 }, aim: 345, plays: { plays: 'vocals', sure: 0.86 } },
+    '1ce523cc-1cb8-5712-bcbd-0f8f16bc8498': { found: true, left: 0.3582, right: 0.6598, outline: [[0.3599, 0.349], [0.6596, 0.3508], [0.6598, 0.6507], [0.3582, 0.6513]], turn: 0, matches: 36, rounds: 5, agreeing: 5, layout: { x: 0.511, y: 0.55, w: 0.37 }, aim: 0, plays: { plays: 'guitar_or_bass', sure: 0.52 } },
+    '91e097bb-25db-5054-bcf4-462fa19129b9': { found: true, left: 0.5995, right: 0.9396, outline: [[0.5995, 0.3299], [0.9396, 0.3305], [0.9396, 0.6706], [0.5996, 0.6709]], turn: 15, matches: 35, rounds: 5, agreeing: 5, layout: { x: 0.811, y: 0.25, w: 0.38 }, aim: 15, plays: { plays: 'drums', sure: 0.93 } },
+    '649b0963-0a5f-5140-a2e9-4bf3a9f526df': { found: false, why: 'nothing in common with the wide picture', rounds: 5, agreeing: 0, plays: { plays: 'keyboards', sure: 0.71 } },
+    '79454bd5-6007-5276-9143-903d0cf2fcc4': { found: false, why: 'nothing in common with the wide picture', rounds: 5, agreeing: 0 },
+  };
+  function placing() {
+    const found = S.answers['/api/stage/place'] || { running: false, available: false, why: 'it is not in this demo' };
+    const { wide, round, rounds, started, finished, cameras, people, step, problem, ...always } = found;
+    const report = { ...copy(always), running: false, showing: {} };
+    for (const c of S.answers['/api/stage'].cameras) report.showing[c.id] = (director().camera_focus || {})[c.id] || [];
+    const look = S.look; if (!look) return report;
+    const t = now() - look.started, looking = LOOK.rounds * LOOK.round;
+    Object.assign(report, { wide: look.wide, rounds: LOOK.rounds, started: look.started, round: Math.min(LOOK.rounds, Math.floor(t / LOOK.round)) });
+    if (t < looking + LOOK.naming) return { ...report, running: true, step: t >= looking && found.naming ? 'naming' : null, cameras: {} };
+    report.finished = look.started + looking + LOOK.naming;
+    const fixed = Object.keys(FOUND).every(id => named(id) && id !== wide) && named(wide) === 'Centre Wide';
+    if (look.wide === wide) return { ...report, cameras: copy(fixed ? FOUND : cameras || {}), ...(people ? { people: copy(people) } : {}) };
+    report.cameras = {};
+    for (const c of S.answers['/api/stage'].cameras) if (c.id !== look.wide) report.cameras[c.id] = { found: false, why: `in this demo only a look from the ${named(wide) || 'wide'} camera was recorded`, rounds: LOOK.rounds, agreeing: 0 };
+    return report;
+  }
+  function placePost(body) {
+    if (!named(body.wide)) return answer({ detail: 'No such camera' }, 404);
+    if (placing().running) return answer({ detail: 'A look is already being taken' }, 409);
+    S.look = { wide: body.wide, started: now() }; save(); return answer(placing());
   }
   function merge(path, body) {
     const target = S.answers[path];
@@ -140,7 +211,8 @@
     if (path === '/api/director') return directorPost(body);
     if (path === '/api/event-mode') return kindPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
-    if (path === '/api/stage' && body.layout) { const st = S.answers['/api/stage']; st.layout = { ...(st.layout || {}), ...body.layout }; if (body.widths) st.widths = { ...(st.widths || {}), ...body.widths }; save(); return answer(read('/api/stage')); }
+    if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
+    if (path === '/api/stage/place') return placePost(body);
     return merge(path, body);
   };
 
