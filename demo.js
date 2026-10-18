@@ -6,11 +6,15 @@
 // says so, and a small programme monitor shows the picture of the camera on air (a still the demo drew, not video).
 (() => {
   const realFetch = window.fetch.bind(window);
-  const KEY = 'mcvsaid-demo-state-v1';
+  // build.py loads this as /demo.js?v=<its own digest>, so that a new one is never taken from the browser's cache (GitHub
+  // Pages lets it keep files ten minutes); what an earlier one kept in this tab, in a shape it may no longer read, is
+  // left behind with it.
+  const VERSION = new URL(document.currentScript.src).searchParams.get('v') || 'dev';
+  const KEY = `mcvsaid-demo-state-${VERSION}`;
   const now = () => Date.now() / 1000;
   const copy = value => JSON.parse(JSON.stringify(value));
   let S = null;
-  const ready = realFetch('/demo-data.json').then(r => r.json()).then(recorded => {
+  const ready = realFetch(`/demo-data.json?v=${VERSION}`).then(r => r.json()).then(recorded => {
     try { const kept = JSON.parse(sessionStorage.getItem(KEY) || 'null'); if (kept && kept.recordedOn === recorded['/api/cameras'].manager_version) S = kept; } catch (error) { /* a private window */ }
     if (!S) {
       S = { answers: copy(recorded), recordedOn: recorded['/api/cameras'].manager_version, recStart: null, streamStart: null, nextCut: now() + 9 };
