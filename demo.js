@@ -75,6 +75,21 @@
     else if (what === 'camera.disarm') { t.armed = false; t.streaming = false; t.recording = false; capture.streamRequested = false; }
     else if (what === 'recording.start') { t.recording = true; t.armed = true; }
     else if (what === 'recording.stop') t.recording = false;
+    else if (what === 'cooler.settings') {
+      // As the simulated phone does: the fan choice, a manual level, a shutdown timer; the lights are always kept off.
+      const p = body.parameters || {};
+      for (const c of [t.cooler, camera.cooler].filter(x => x && typeof x === 'object')) {
+        if (p.fan) { c.fan = p.fan; c.fan_mode = p.fan === 'overclock_streaming' ? 'smart' : p.fan; c.fan_speed = p.fan === 'manual' ? (p.level || c.fan_level || 3) : null; }
+        if (p.level) { c.fan_level = p.level; if (c.fan === 'manual') c.fan_speed = p.level; }
+        if ('shutdown' in p) c.shutdown = p.shutdown || null;
+        if (p.look) note('In the demo the cooler is already found.');
+        // Its fan speed as measured on a real one in each mode, and the line the card shows, as the manager writes it.
+        const level = c.fan_level || 3;
+        c.fan_rpm = { silent: 3050, smart: 3560, overclock: 5800, overclock_streaming: 5800, manual: 3930 + (level - 1) * 470 }[c.fan] || c.fan_rpm;
+        const mode = { overclock_streaming: 'overclock while streaming', manual: `fixed speed ${level}` }[c.fan] || c.fan;
+        if (typeof c.summary === 'string') c.summary = c.summary.replace(/^Cooler: [^,]*, [\d,]+ rpm/, `Cooler: ${mode}, ${c.fan_rpm.toLocaleString('en')} rpm`);
+      }
+    }
     tick(); save();
     return answer({ id: body.request_id || 'demo', camera_id: id, state: 'SUCCEEDED', result: { type: 'ack', ok: true, demo: true }, created: now() });
   }
