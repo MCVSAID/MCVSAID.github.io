@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Add a phone · MCVSAID</title><link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/phones.css">
+<body><header><p class="crumbs"><a href="/system#devices">System</a> › Cameras &amp; devices</p><h1>Add a phone</h1></header>
+<form id="login"><label>Manager password <input id="password" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<main id="setup" hidden>
+<p>Plug a phone into this PC by USB to make it a camera, or to put right one whose settings have drifted. Each step is looked at first and left alone when it is already as it should be.</p>
+<p id="trouble" class="recording-warning" hidden></p>
+<p id="no-app" class="recording-warning" hidden>No camera app is published on this manager yet, so a phone cannot be given it, by cable or by code. Under System › Cameras &amp; devices › Camera app, press <a href="/system#release">Check GitHub for a newer app</a> and publish the newest one; then come back here.</p>
+<div id="phones"></div>
+<section id="code"><h2>Without a cable: a code for a reset phone</h2>
+<p>A factory-reset phone can be made a camera by scanning a code on this screen: no cable, no Developer options. The phone fetches the app from the internet, checks it is signed with this installation’s key, and sets itself up.</p>
+<p id="code-why" class="recording-warning" hidden></p>
+<form id="code-place"><label>Public place the app is fetched from (on GitHub, as OWNER/NAME) <input id="code-repository" type="text" autocomplete="off" spellcheck="false"></label> <button>Save</button> <small id="code-download"></small></form>
+<form id="code-form" autocomplete="off">
+<fieldset><legend>The camera it becomes</legend><div id="code-which"></div></fieldset>
+<fieldset><legend>Wi-Fi to set up over (it needs the internet)</legend>
+<label>Network name <input id="setup-ssid" type="text" maxlength="32" required></label>
+<label>Password <input id="setup-password" type="password" autocomplete="off" maxlength="63"></label></fieldset>
+<fieldset><legend>Camera network (leave empty when it is the same one)</legend>
+<label>Network name <input id="camera-ssid" type="text" maxlength="32"></label>
+<label>Password <input id="camera-password" type="password" autocomplete="off" maxlength="63"></label>
+<small>The phone moves to this network when its set-up is finished, and forgets the first one once it has reached the manager.</small></fieldset>
+<p><small>The passwords go into the code and nowhere else: the manager does not keep them. Anyone who photographs the code has both, and can pair as this camera until the phone has.</small></p>
+<button class="go">Show the code</button></form>
+<div id="code-shown" hidden><h3 id="code-title"></h3>
+<ol><li>Reset the phone, or take a new one out of its box. Do not start its set-up.</li>
+<li>On the very first screen (“Hi there” or “Welcome”), tap the same empty spot <b>six times</b>. A camera opens.</li>
+<li>Point it at this code. The phone joins the Wi-Fi, fetches the app and sets itself up; follow what it asks, and skip any sign-in.</li>
+<li>When the phone has finished, it appears on the Cameras page. Set a screen lock on it afterwards.</li></ol>
+<div id="code-squares"></div><p><button id="code-hide">Hide the code</button> <small id="code-note"></small></p></div>
+</section>
+<section id="guide"><h2>Preparing a phone from scratch</h2>
+<p>These are the parts only a person holding the phone can do. They take about ten minutes, once per phone. After them, everything else is done from this page.</p>
+<h3>1. Start from a reset phone</h3>
+<ol>
+<li>If the phone has been used before, reset it: <b>Settings › System › Reset options › Erase all data (factory reset)</b>. On a Samsung: <b>Settings › General management › Reset › Factory data reset</b>. This erases everything on the phone.</li>
+<li>If it was signed in to a Google or Samsung account, remove that account <b>before</b> resetting (Settings › Passwords and accounts). Otherwise the phone asks for that account again after the reset.</li>
+</ol>
+<h3>2. Go through the phone’s first-time set-up, signing in to nothing</h3>
+<ol>
+<li>Choose the language and carry on.</li>
+<li>When asked to connect to Wi-Fi, join the <b>camera network</b>. If the phone then insists on an account, go back and choose <b>Set up offline</b> or <b>Skip</b> instead, and join the camera network afterwards in Settings.</li>
+<li><b>Do not sign in to a Google account.</b> Choose <b>Skip</b>, <b>Set up offline</b> or <b>Not now</b>. On a Samsung, skip the Samsung account as well. This is the step that matters most: Android lets the app manage the phone remotely only if the phone has no accounts on it.</li>
+<li>Do not copy apps or data from another phone.</li>
+<li>Set a <b>screen lock</b> (a PIN) when offered, and note it. The cameras are meant to stay locked.</li>
+<li>Decline the extras: Google services, backup, assistant, fingerprint and face unlock are not needed.</li>
+</ol>
+<h3>3. Switch on Developer options</h3>
+<ol>
+<li>Open <b>Settings › About phone</b>. On a Samsung: <b>Settings › About phone › Software information</b>.</li>
+<li>Tap <b>Build number</b> seven times, and enter the screen lock PIN if asked. The phone says “You are now a developer”.</li>
+</ol>
+<h3>4. Switch on USB debugging</h3>
+<ol>
+<li>Open <b>Settings › System › Developer options</b>. On a Samsung: <b>Settings › Developer options</b>, at the bottom of Settings.</li>
+<li>Switch on <b>USB debugging</b> and confirm.</li>
+</ol>
+<h3>5. Plug it into this PC</h3>
+<ol>
+<li>Use a cable that carries data; some cables only charge.</li>
+<li>Unlock the phone. It asks <b>Allow USB debugging?</b> Tick <b>Always allow from this computer</b> and tap <b>Allow</b>.</li>
+<li>The phone appears at the top of this page within a few seconds. Choose what it should be and press <b>Set up this phone</b>.</li>
+</ol>
+<h3>If something does not go as described</h3>
+<ul>
+<li><b>The phone does not appear here.</b> Try another cable or USB port, unlock the phone, and check that USB debugging is still on. If the phone asks what the USB connection is for, either answer will do.</li>
+<li><b>It appears, but says it has not allowed this computer.</b> Unplug it and plug it in again with the screen unlocked, then tap Allow.</li>
+<li><b>“The phone has accounts on it.”</b> Remove them in Settings › Passwords and accounts and run the set-up again. If that is not enough, reset the phone and skip the sign-in.</li>
+<li><b>It is set up but does not connect.</b> Check it is on the camera network. After a phone has been restarted, its screen lock has to be entered once before it can connect.</li>
+</ul></section>
+<pre id="result" aria-live="polite"></pre></main><script src="/nav.js"></script><script src="/phones.js"></script></body></html>

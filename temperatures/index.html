@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Temperature History</title><link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/temperatures.css">
+<body><header><h1>Temperatures</h1></header>
+<form id="login"><label>Manager password <input id="password" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<main id="history" hidden>
+<p>Each phone's temperature, kept from every run so one show can be set beside another. A run is a stretch in which at least one camera was streaming or recording.</p>
+<div id="controls"><label>Show <select id="view"></select></label><label>Compare with <select id="compare"></select></label></div>
+<p id="empty" hidden></p>
+<div class="viz-root" id="chart" hidden><div id="legend"></div><svg id="plot" role="img" aria-label="Phone temperatures over time"></svg><div id="tip" hidden></div></div>
+<div class="scroll"><table id="summary" hidden></table></div>
+<section id="coolers" hidden><h2>Coolers now</h2><p>Phones with a Black Shark cooler clamped on: the cooler’s own temperature and fan, beside the phone’s.</p><div class="scroll"><table id="cooler-table"></table></div></section>
+<pre id="result" aria-live="polite"></pre></main><script src="/nav.js"></script><script src="/temperatures.js"></script></body></html>

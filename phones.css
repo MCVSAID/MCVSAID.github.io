@@ -1,0 +1,19 @@
+/* Add a phone page. In a file of its own, not in the page: the manager's content security policy allows styling
+   only from its own files, and styling written into a page is silently dropped. */
+.phone { background:#1e2c39; border:1px solid #2c3e4f; border-radius:12px; padding:14px 18px; margin:14px 0; }
+.phone h2 { margin:0 0 2px; font-size:1.2rem; } .phone > small { color:#b7c6d4; }
+.phone ul { list-style:none; padding:0; margin:10px 0; } .phone li { padding:5px 0 5px 28px; position:relative; } .phone li small { color:#b7c6d4; display:block; }
+.phone li::before { position:absolute; left:2px; top:5px; font-weight:700; }
+.phone li.ok::before, .phone li.done::before { content:'✔'; color:#6fcf97; } .phone li.skipped::before { content:'✔'; color:#8aa3b8; }
+.phone li.todo::before, .phone li.waiting::before { content:'○'; color:#8aa3b8; } .phone li.running::before { content:'…'; color:#5fb4ee; }
+.phone li.stop::before, .phone li.failed::before { content:'✖'; color:#ff6b6b; } .phone li.note::before { content:'!'; color:#ffd17a; }
+.phone li.failed, .phone li.stop { color:#ffb3b3; } .phone li.failed small, .phone li.stop small { color:#ffb3b3; }
+.phone fieldset { border:1px solid #2c3e4f; border-radius:10px; margin:10px 0; padding:10px 14px; } .phone fieldset label { display:block; margin:6px 0; } .phone fieldset input[type=text] { width:16em; max-width:100%; }
+.phone .how { margin:0 0 0 26px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; } .phone button.go { min-height:42px; padding:8px 18px; }
+.phone h3 { margin:14px 0 0; font-size:1rem; color:#b7c6d4; font-weight:600; }
+#guide { margin:28px 0 18px; padding-top:8px; border-top:1px solid #2c3e4f; max-width:60em; } #guide h3 { margin:18px 0 4px; font-size:1.05rem; } #guide li { margin:6px 0; line-height:1.45; }
+.phone .how small { color:#b7c6d4; flex-basis:100%; line-height:1.4; } .phone .how label { flex-basis:100%; color:#ffd17a; }
+#code { margin:28px 0 18px; padding-top:8px; border-top:1px solid #2c3e4f; max-width:60em; } #code fieldset { border:1px solid #2c3e4f; border-radius:10px; margin:10px 0; padding:10px 14px; }
+#code label { display:block; margin:6px 0; } #code input[type=text], #code input[type=password] { width:18em; max-width:100%; } #code small { color:#b7c6d4; } #code-repository { width:22em; }
+#code-squares { background:#fff; padding:16px; border-radius:8px; display:inline-block; line-height:0; } #code-squares svg { width:min(78vmin,640px); height:min(78vmin,640px); display:block; }
+#code-shown li { margin:6px 0; line-height:1.45; } #code-which .how { margin:0 0 0 26px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }

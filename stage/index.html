@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage Shots</title><link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/stage.css">
+<body><header><h1>Stage Shots</h1></header>
+<form id="login"><label>Manager password <input id="password" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<main id="shots" hidden>
+<p id="now" aria-live="polite"></p>
+<div id="bar"><button id="auto" aria-pressed="false">Automatic</button><button id="split" aria-pressed="false">Split screen</button><button id="arrange" aria-pressed="false">Arrange</button><button id="roommap" aria-pressed="false" hidden>Room map</button></div>
+<p id="hint"></p>
+<div id="stage" aria-label="Cameras, laid out as they stand: the stage at the top, the audience at the bottom">
+<div id="sides" aria-hidden="true"><span class="left"><b>Stage right</b> <small>house left</small></span><span class="back">Back of stage</span><span class="right"><b>Stage left</b> <small>house right</small></span></div>
+<div id="performers" class="zone" role="group" aria-label="Performers, from the back of the stage to the front"></div>
+<div id="wides" class="row" role="group" aria-label="Wide shots"><span class="label">Wide shots</span></div>
+<div id="front" aria-hidden="true">Front of stage</div>
+<div id="crowds" class="row" role="group" aria-label="Audience"><span class="label">Audience</span></div>
+</div>
+<section id="room" hidden aria-label="Room map"><div class="map"></div><div class="side"><div class="details" aria-live="polite"></div><div class="waiting"></div></div></section>
+<section id="tools" hidden></section>
+<section id="place" hidden aria-label="Place cameras from the wide shot (experimental)"></section>
+<section id="defaults" hidden></section>
+<section id="remote" hidden></section>
+<pre id="result" aria-live="polite"></pre></main><script src="/nav.js"></script><script src="/stage.js"></script><script src="/room.js"></script><script src="/place.js"></script></body></html>

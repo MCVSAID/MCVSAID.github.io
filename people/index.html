@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>People</title><link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/people.css">
+<body><header><h1>People</h1><p>Performers the director recognises, with their consent: stars get priority on any camera, and a camera can follow a performer. Nobody else is ever identified.</p></header>
+<form id="login"><label>Manager password <input id="password" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<main id="people" hidden>
+<section id="notice" aria-live="polite"></section>
+<section id="recognition" class="card"></section>
+<section id="add" class="card">
+  <h2>Add a performer</h2>
+  <p class="hint">Take a picture from a camera while the performer is in view, in what they will perform in, then click them in the picture (or drag a box around them).
+    Then add more of them (<em>Add as</em>: the performer), at least three: from each camera that will see them, from the front and the side, and one close enough that their face is clear.</p>
+  <div class="row"><label>Camera <select id="camera"></select></label><button type="button" id="take">Take a picture</button></div>
+  <div id="picture" class="picture" hidden><img id="shot" alt="The camera's picture"><svg id="boxes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+  <form id="enrol" hidden>
+    <fieldset><legend>Who is this?</legend>
+      <label>Add as <select id="as"><option value="">a new performer</option></select></label>
+      <div id="new-fields">
+        <label>Name <input id="name" autocomplete="off" spellcheck="false"></label>
+        <label>Role <select id="role"><option value="performer">Performer</option><option value="star">Star: priority on any camera</option></select></label>
+        <label>Instruments <input id="instruments" placeholder="e.g. vocals, guitar" autocomplete="off"></label>
+        <label id="release-line" class="check"><input type="checkbox" id="release"> I have this performer's signed release for MCVSAID to recognise them during shows</label>
+        <label id="faces-line" class="check"><input type="checkbox" id="faces"> <span id="faces-text">Their release also covers recognising their face (optional: without it, only how they look is used)</span></label>
+        <label class="check"><input type="checkbox" id="improve"> <span id="improve-text">They also agreed to their data being used to improve MCVSAID (optional)</span></label>
+      </div>
+    </fieldset>
+    <button id="enrol-button">Add</button> <button type="button" id="discard">Discard the picture</button>
+  </form>
+</section>
+<section id="performers"></section>
+<section id="settings" class="card"></section>
+<pre id="result" aria-live="polite"></pre></main><script src="/nav.js"></script><script src="/people.js"></script></body></html>

@@ -1,0 +1,9 @@
+/* Temperatures page. In a file of its own, not in the page: the manager's content security policy allows styling
+   only from its own files, and styling written into a page is silently dropped. */
+/* Chart colours: one fixed colour per camera, by slot. The plot sits on its own dark surface, the one these colours were checked against. */
+.viz-root { --surface-1:#1a1a19; --text-primary:#ffffff; --text-secondary:#c3c2b7; --grid:#ffffff1f; background:var(--surface-1); color:var(--text-primary); border-radius:12px; padding:16px; position:relative; }
+.viz-root svg { display:block; width:100%; height:auto; touch-action:none; } .viz-root text { fill:var(--text-secondary); font-size:12px; }
+#controls { display:flex; flex-wrap:wrap; gap:8px 20px; align-items:center; margin:12px 0; } #controls select { max-width:100%; }
+#legend { display:flex; flex-wrap:wrap; gap:6px 18px; margin:0 0 10px; font-size:14px; } #legend span { display:inline-flex; align-items:center; gap:6px; } #legend i { display:inline-block; width:18px; height:0; border-top:3px solid; border-radius:2px; } #legend .note { color:var(--text-secondary); }
+#tip { position:absolute; pointer-events:none; background:#101820; border:1px solid #547087; border-radius:8px; padding:8px 10px; font-size:13px; min-width:150px; z-index:2; } #tip b { font-variant-numeric:tabular-nums; } #tip div { display:flex; align-items:center; gap:6px; white-space:nowrap; } #tip i { display:inline-block; width:10px; height:3px; border-radius:2px; } #tip .when { color:var(--text-secondary); margin-bottom:4px; } #tip .other { color:var(--text-secondary); }
+#summary { width:100%; border-collapse:collapse; margin-top:16px; font-variant-numeric:tabular-nums; } #summary th,#summary td { text-align:left; padding:6px 10px; border-bottom:1px solid #2c3e4f; } #summary th { color:#b7c6d4; font-weight:600; } .scroll { overflow-x:auto; } #empty { color:#b7c6d4; }
