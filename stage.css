@@ -33,15 +33,15 @@
 .shot.on-air .cam { color:#ffd0d0; }
 .shot .corner { display:none; }
 /* Arrange: everything that can be dragged shows it, and is big enough to catch with a finger. */
-#stage.arranging #performers { background-image:linear-gradient(#ffffff0d 1px,transparent 1px),linear-gradient(90deg,#ffffff0d 1px,transparent 1px); background-size:10% 12.5%; }
-#stage.arranging .shot { cursor:grab; border-style:dotted; touch-action:none; } #stage.arranging .shot.dragging { cursor:grabbing; box-shadow:0 6px 18px #000a; z-index:3; }
-#stage.arranging .shot.selected { border-style:solid; border-color:#8fd3ff; box-shadow:0 0 0 3px #8fd3ff66; z-index:2; }
-#stage.arranging .shot .cam { width:34px; height:34px; opacity:1; pointer-events:auto; cursor:grab; border-radius:50%; background:#0d151cd0; outline:2px solid #8fd3ff; padding:5px; box-sizing:border-box; color:#8fd3ff; }
+:is(#stage, #room.together).arranging #performers { background-image:linear-gradient(#ffffff0d 1px,transparent 1px),linear-gradient(90deg,#ffffff0d 1px,transparent 1px); background-size:10% 12.5%; }
+:is(#stage, #room.together).arranging .shot { cursor:grab; border-style:dotted; touch-action:none; } :is(#stage, #room.together).arranging .shot.dragging { cursor:grabbing; box-shadow:0 6px 18px #000a; z-index:3; }
+:is(#stage, #room.together).arranging .shot.selected { border-style:solid; border-color:#8fd3ff; box-shadow:0 0 0 3px #8fd3ff66; z-index:2; }
+:is(#stage, #room.together).arranging .shot .cam { width:34px; height:34px; opacity:1; pointer-events:auto; cursor:grab; border-radius:50%; background:#0d151cd0; outline:2px solid #8fd3ff; padding:5px; box-sizing:border-box; color:#8fd3ff; }
 /* A handle at each corner: a finger-sized catch around a small square drawn on the corner. */
-#stage.arranging .shot .corner { display:block; position:absolute; width:32px; height:32px; z-index:2; }
-#stage.arranging .shot .corner::after { content:''; position:absolute; top:50%; left:50%; width:12px; height:12px; transform:translate(-50%,-50%); background:#8fd3ff; border:2px solid #0d151c; border-radius:2px; }
-#stage.arranging .shot .corner[data-corner=nw] { top:-16px; left:-16px; cursor:nwse-resize; } #stage.arranging .shot .corner[data-corner=se] { bottom:-16px; right:-16px; cursor:nwse-resize; }
-#stage.arranging .shot .corner[data-corner=ne] { top:-16px; right:-16px; cursor:nesw-resize; } #stage.arranging .shot .corner[data-corner=sw] { bottom:-16px; left:-16px; cursor:nesw-resize; }
+:is(#stage, #room.together).arranging .shot .corner { display:block; position:absolute; width:32px; height:32px; z-index:2; }
+:is(#stage, #room.together).arranging .shot .corner::after { content:''; position:absolute; top:50%; left:50%; width:12px; height:12px; transform:translate(-50%,-50%); background:#8fd3ff; border:2px solid #0d151c; border-radius:2px; }
+:is(#stage, #room.together).arranging .shot .corner[data-corner=nw] { top:-16px; left:-16px; cursor:nwse-resize; } :is(#stage, #room.together).arranging .shot .corner[data-corner=se] { bottom:-16px; right:-16px; cursor:nwse-resize; }
+:is(#stage, #room.together).arranging .shot .corner[data-corner=ne] { top:-16px; right:-16px; cursor:nesw-resize; } :is(#stage, #room.together).arranging .shot .corner[data-corner=sw] { bottom:-16px; left:-16px; cursor:nesw-resize; }
 /* The camera pressed in Arrange, and the administrator's default widths. */
 #tools, #defaults { margin-top:12px; padding:14px 16px; background:#1e2c39; border-radius:12px; }
 #tools h2, #defaults h2 { margin:0 0 8px; font-size:1.1rem; } #tools .field { margin:10px 0; }
@@ -78,8 +78,23 @@
 #room .waiting h3 { margin:8px 0; font-size:1rem; } #room .waiting h3:first-child { margin-top:0; } #room .waiting button { display:block; width:100%; text-align:left; margin:6px 0; min-height:44px; }
 #room .placed button::before { content:''; display:inline-block; width:.8em; height:.8em; margin-right:.5em; border-radius:50%; background:var(--swatch); vertical-align:-.05em; }
 #room .placed button[aria-pressed=true] { background:#eef4f8; color:#101820; }
+/* Room view: the buttons on the room map's stage, the wide shots in a row at its front, the audience out in the house.
+   The rows are laid over the map where the room's geometry puts them (--left, --right, --front: shares of the map). */
+#room .canvas { position:relative; } #room .over { --least:96px; --tall:60px; position:absolute; inset:0; pointer-events:none; }
+#room .over .shot { pointer-events:auto; padding:6px 8px 6px 10px; } #room .over .shot b { font-size:.98rem; } #room .over .shot > span:not(.cam):not(.corner), #room .over .shot em { font-size:.76rem; }
+#room .over .shot .cam { display:none; }
+#room .over .shot::before { content:''; position:absolute; left:0; top:0; bottom:0; width:7px; border-radius:7px 0 0 7px; background:var(--swatch, transparent); }
+#room.together:not(.arranging) .mark .label { display:none; }
+#room .over #performers { position:absolute; top:0; left:calc(var(--left) * 100%); width:calc((var(--right) - var(--left)) * 100%); height:calc(var(--front) * 100%);
+  aspect-ratio:auto; min-height:0; background:none; border:0; }
+#room .over #performers::before, #room .over #performers::after { content:none; }
+#room .over .row { position:absolute; left:calc(var(--left) * 100%); width:calc((var(--right) - var(--left)) * 100%); }
+#room .over #wides { top:calc(var(--front) * 100% + 10px); } #room .over #crowds { top:calc((var(--front) + (1 - var(--front)) * 0.5) * 100%); }
+#room .over .row .label { display:none; }
+#room.together { grid-template-columns:minmax(0,1fr); } #room.together.arranging { grid-template-columns:minmax(0,1fr) 340px; }
+#room.together:not(.arranging) .side { display:none; } #room.together:not(.arranging) .mark { pointer-events:none; cursor:default; }
 /* A tablet: a little less room. */
-@media (max-width:900px) { #stage { --least:100px; } #performers { aspect-ratio:4/3; } #room { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:900px) { #stage { --least:100px; } #performers { aspect-ratio:4/3; } #room, #room.together.arranging { grid-template-columns:minmax(0,1fr); } }
 /* A phone held upright: a taller stage, so the buttons have room, and buttons a thumb can find without covering each other. */
 @media (max-width:640px) {
   body { padding:12px; } #stage { --least:92px; --tall:64px; padding:8px; gap:8px; } #performers { aspect-ratio:auto; height:max(46vh,340px); min-height:0; }
@@ -96,4 +111,7 @@
 #place .seen svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
 #place .seen polygon { fill:none; stroke-width:3px; vector-effect:non-scaling-stroke; } #place .seen polygon.off { stroke-dasharray:6 6; opacity:.45; }
 #place .found { border-left:6px solid var(--swatch); padding:4px 0 4px 10px; margin:8px 0; } #place .found.missed { opacity:.75; }
-#place .found .aim { margin-left:28px; color:#b7c6d4; } #place small { display:block; color:#b7c6d4; margin:6px 0; }
+#place .found .aim { margin-left:28px; color:#b7c6d4; }
+#place .found .plays { margin:4px 0 4px 28px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; } #place .found .plays button { min-height:40px; margin:0; }
+#place .seen rect { fill:none; vector-effect:non-scaling-stroke; } #place .seen rect.person { stroke:#ffffff80; stroke-width:1.5px; stroke-dasharray:4 4; }
+#place .seen rect.performer { stroke-width:2.5px; fill:#ffffff14; } #place small { display:block; color:#b7c6d4; margin:6px 0; }

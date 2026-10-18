@@ -2,8 +2,10 @@
 // EXPERIMENTAL, in Stage Shots' Arrange on the manager's dashboard: each camera's button placed and sized from where its
 // picture is found in the wide camera's (autoplace.py). The look takes about half a minute; what it found is drawn
 // over the wide picture and listed, and nothing changes until the operator applies it, camera by camera, with an undo.
-// A camera's aim for the room map is only offered, unticked: it is less sure than the place. Uses stage.js's state,
-// helpers and act(); loaded after it, on the manager's dashboard only.
+// A camera's aim for the room map is only offered, unticked: it is less sure than the place. With the person detector,
+// a performer's button stands on the performer its camera shows; with a vision model, each performer's camera says what
+// its performer seems to play, for the operator to take with a press ("guitar or bass?" when it cannot tell). Uses
+// stage.js's state, helpers and act(); loaded after it, on the manager's dashboard only.
 (() => {
   const COLOURS = ['#4cc9f0', '#f4a261', '#90be6d', '#f78fb3', '#b5a1ff', '#ffd166', '#2ec4b6', '#ff7b72'];
   const bar = document.querySelector('#bar'), panel = document.querySelector('#place');
@@ -59,6 +61,17 @@
     img.src = `/api/stage/place/picture?at=${report.finished || report.started}`; img.alt = `The ${named(report.wide)} camera's picture, with what each camera found sees outlined on it`;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 1 1'); svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('aria-hidden', 'true');
+    // Everyone the person detector found, faintly; a performer a camera shows, in that camera's colour.
+    const box = (b, className, colourOf) => {
+      const r = document.createElementNS(svg.namespaceURI, 'rect');
+      r.setAttribute('x', b[0]); r.setAttribute('y', b[1]); r.setAttribute('width', b[2] - b[0]); r.setAttribute('height', b[3] - b[1]);
+      r.setAttribute('class', className); if (colourOf) r.style.stroke = colourOf; svg.append(r);
+    };
+    (report.people || []).forEach(b => box(b, 'person'));
+    for (const [id, found] of Object.entries(report.cameras || {})) {
+      const c = state.cameras.find(o => o.id === id);
+      if (found.performer && c) box(found.performer, 'performer', colour(c));
+    }
     for (const [id, found] of Object.entries(report.cameras || {})) {
       const c = state.cameras.find(o => o.id === id);
       if (!found.found || !c) continue;
@@ -78,13 +91,14 @@
     line.style.setProperty('--swatch', colour(c));
     const title = node('b', named(id));
     if (!found.found) {
-      line.classList.add('missed'); line.append(title, node('span', ` Not placed: ${found.why}.`)); return line;
+      line.classList.add('missed'); line.append(title, node('span', ` Not placed: ${found.why}.`)); naming(line, id, found); return line;
     }
-    if (!found.layout) { line.classList.add('missed'); line.append(title, node('span', ' Found, but where it looks does not reach the stage from where the wide camera stands on the room map.')); return line; }
+    if (!found.layout) { line.classList.add('missed'); line.append(title, node('span', ' Found, but where it looks does not reach the stage from where the wide camera stands on the room map.')); naming(line, id, found); return line; }
     const label = node('label'), box = document.createElement('input'); box.type = 'checkbox'; box.checked = use[id] !== false;
     box.onchange = () => { use[id] = box.checked; drawn = ''; paint(); };
     const sure = `found in ${found.agreeing} of ${found.rounds} pictures`;
-    label.append(box, title, node('span', ` takes in about ${Math.round(found.layout.w * 100)}% of the stage, ${acrossWords(found.layout.x)} (${sure})`));
+    const stands = found.performer ? ', standing on the performer it shows' : report.people && kindOf(c) === 'single' ? ', nobody found in its picture so placed by its middle' : '';
+    label.append(box, title, node('span', ` takes in about ${Math.round(found.layout.w * 100)}% of the stage, ${acrossWords(found.layout.x)}${stands} (${sure})`));
     line.append(label);
     if (found.aim !== undefined) {
       const was = state.room.map[id]?.aim, turnLabel = node('label', undefined, 'aim'), turn = document.createElement('input'); turn.type = 'checkbox'; turn.checked = !!aims[id];
@@ -92,7 +106,29 @@
       turnLabel.append(turn, node('span', ` Also turn it on the room map to ${found.aim}° (now ${was}°). Less sure than the place: tick it only if that looks right.`));
       line.append(turnLabel);
     }
+    naming(line, id, found);
     return line;
+  }
+
+  // Who the camera's performer seems to be, with a press to make the camera show that. Never set by itself.
+  function naming(line, id, found) {
+    const plays = found.plays;
+    if (!plays) return;
+    const box = node('div', undefined, 'plays'), now = report.showing?.[id] || [], name = key => report.names?.[key] || key;
+    const give = key => {
+      const b = node('button', `${name(key)}`); b.setAttribute('aria-pressed', String(now.includes(key))); b.disabled = now.length === 1 && now[0] === key;
+      b.onclick = async () => { await act('/api/director', { camera_focus: { [id]: [key] } }); drawn = ''; ask(); }; return b;
+    };
+    const nowWords = now.length ? ` It is set to show ${now.map(name).join(' + ')}.` : ' It is not set to show anyone yet.';
+    if (!plays.plays) box.append(node('span', `Who is who: ${plays.why}.`));
+    else if (plays.plays === 'guitar_or_bass') {
+      box.append(node('span', `Plays guitar or bass? The picture cannot tell them apart${plays.leaning ? ` (leaning ${name(plays.leaning)})` : ''}.${nowWords} `), give('guitar'), give('bass'));
+    } else if (now.includes(plays.plays)) box.append(node('span', `Looks like ${name(plays.plays)}, which it is set to show${now.length > 1 ? ` (with ${now.filter(k => k !== plays.plays).map(name).join(' + ')})` : ''}.`));
+    else {
+      box.append(node('span', `Looks like ${name(plays.plays)} (${Math.round(plays.sure * 100)}% sure).${nowWords} `));
+      const b = give(plays.plays); b.textContent = `Show ${name(plays.plays)} on it`; box.append(b);
+    }
+    line.append(box);
   }
 
   function paint() {
@@ -109,7 +145,8 @@
     state.cameras.forEach(c => { const o = node('option', `${shows(c)} (${c.name})`); o.value = c.id; o.selected = c.id === wide; select.append(o); });
     select.onchange = () => { wide = select.value; drawn = ''; paint(); };
     choose.append(select); panel.append(choose);
-    const go = node('button', report?.running ? `Looking… picture ${report.round} of ${report.rounds}` : report?.cameras ? 'Look again' : 'Look now');
+    const doing = report?.step === 'people' ? 'Finding the performers…' : report?.step === 'naming' ? 'Asking who is who…' : `Looking… picture ${report?.round} of ${report?.rounds}`;
+    const go = node('button', report?.running ? doing : report?.cameras ? 'Look again' : 'Look now');
     go.disabled = busy || !!report?.running || !wide; go.onclick = look; panel.append(go);
     if (report?.problem) { const trouble = node('p', `The look stopped: ${report.problem}`); trouble.className = 'recording-warning'; panel.append(trouble); }
     const results = Object.entries(report?.cameras || {});
@@ -119,6 +156,9 @@
       results.sort(([, a], [, b]) => (b.found && !!b.layout) - (a.found && !!a.layout)).forEach(([id, found]) => list.append(row(id, found)));
       panel.append(list);
       if (results.some(([, f]) => f.layout)) { const put = node('button', 'Apply to the ticked cameras'); put.onclick = apply; panel.append(put); }
+      if (report.people_why) { const why = node('small', 'Performers’ buttons go where the middle of their camera’s picture is. To put them on the performers themselves needs the person detector (Plus AI), which is not working here.'); why.title = report.people_why; panel.append(why); }
+      if (results.some(([, f]) => f.plays)) { const note = node('small', 'Who is who is the vision model’s guess from each camera’s own picture, not yet tried on concert pictures. Drums, keys and singers should be the easiest; a guitar and a bass look alike, so it asks when it cannot tell. Nothing changes until you press one.'); panel.append(note); }
+      else if (!report.naming) panel.append(node('small', 'With a vision model set up for choosing shots (Director page), it also suggests who each performer’s camera shows: drums, keys, guitar or bass and so on.'));
       if (!state.room?.map?.[report.wide]) panel.append(node('small', 'The wide camera is not on the room map, so its picture is taken to span the stage. Put it on the map for places measured from where it really stands, and to be offered aims.'));
     }
     if (undo) { const back = node('button', 'Undo'); back.onclick = takeBack; panel.append(back); }
@@ -126,7 +166,7 @@
   }
 
   window.placeDraw = () => {
-    const roomOpen = !document.querySelector('#room')?.hidden;
+    const roomOpen = document.querySelector('#roommap')?.getAttribute('aria-pressed') === 'true';
     button.hidden = !window.concert || !arranging || roomOpen;
     if (button.hidden && open) { open = false; }
     button.setAttribute('aria-pressed', String(open)); panel.hidden = !open;
