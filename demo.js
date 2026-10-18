@@ -19,6 +19,12 @@
     if (!S) {
       S = { answers: copy(recorded), recordedOn: recorded['/api/cameras'].manager_version, recStart: null, streamStart: null, nextCut: now() + 9 };
       const d = S.answers['/api/cameras'].director; d.recording = null; d.streaming = null; d.since = now();
+      // Scene Chat as recorded, brought forward so that its last line is a minute and a half old.
+      const c = S.answers['/api/scene-chat'];
+      if (c) {
+        const shift = now() - 90 - Math.max(c.show.started, ...c.messages.map(m => m.at));
+        c.show.started += shift; c.messages.forEach(m => { m.at += shift; }); c.wishes.forEach(w => { w.at += shift; w.until += shift; });
+      }
     }
     S.kinds = recorded.__kinds__ || {};
     S.recordedFocus = recorded['/api/cameras'].director.camera_focus || {};
@@ -31,13 +37,14 @@
   const named = id => (cams().cameras.find(c => c.id === id) || {}).name;
 
   // ---- what the director does by itself ------------------------------------------------------------
-  function cutTo(target) {
+  function cutTo(target, byHand = false) {
     const d = director(), now_ = now();
     if (d.splits && d.splits[target]) { d.pair = d.splits[target]; d.on_air = null; d.scene = target; }
     else if (named(target)) { d.pair = null; d.on_air = target; d.scene = `${d.prefix || 'Cam '}${named(target)}`; }
     else return;
     d.since = now_; S.nextCut = now_ + 8 + Math.random() * 10;
     if (d.recording) { d.cuts = (d.cuts || 0) + 1; }
+    if (!byHand) chatCut(d.pair ? d.pair.map(named).join(' + ') : named(target));
   }
   function tick() {
     if (!S) return;
@@ -57,6 +64,79 @@
   }
   setInterval(tick, 1000);
 
+
+  // ---- Scene Chat (scenechat.py): the director's canned replies, chosen as the manager chooses them ------------------
+  const chat = () => S.answers['/api/scene-chat'];
+  const CHAT = { most: 4, lasts: 15 * 60 };
+  const SAME = { keyboards: ['keys', 'keyboard', 'synth', 'organ'], drums: ['drum', 'drummer', 'kit'], vocals: ['singer', 'singing', 'vocal', 'vocalist', 'voice'],
+    guitar: ['guitarist'], bass: ['bassist'], band: ['whole band', 'wide', 'wide shot', 'everyone'], host: ['host'], board: ['cutting board', 'board', 'knife', 'chopping'],
+    stovetop: ['stove', 'pan', 'pot', 'hob'], cook_host: ['host', 'chef'], kitchen_wide: ['wide', 'whole kitchen'], wide: ['wide', 'wide shot', 'everyone'] };
+  const said = (who, text, more = {}) => { const m = { id: Math.random().toString(16).slice(2, 10), at: now(), who, text, ...more }; chat().messages.push(m); chat().messages = chat().messages.slice(-200); return m; };
+  const has = (text, word) => new RegExp(`(^|[^\\w-])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`, 'i').test(text);
+  function chatTopic(text) {
+    const words = S.answers['/api/event-mode']?.words || {};
+    const found = [];
+    for (const [key, name] of director().instruments || []) {
+      const short = name.split(/ \/ | \(/)[0].toLowerCase();
+      for (const word of [name.toLowerCase(), short, ...(SAME[key] || [])]) found.push([word, key, short]);
+    }
+    for (const word of ['crowd', 'audience', 'congregation', words.crowd || 'crowd']) found.push([word, 'crowd', words.crowd || 'crowd']);
+    for (const c of cams().cameras) found.push([c.name.toLowerCase(), `camera:${c.id}`, c.name]);
+    found.sort((a, b) => b[0].length - a[0].length);
+    return found.find(([word]) => has(text, word)) || null;
+  }
+  function chatActive() { const c = chat(); c.wishes = c.wishes.filter(w => w.until > now() || (said('director', `Wish expired: “${w.text}”`, { system: true }), false)); return c.wishes.sort((a, b) => b.at - a.at); }
+  function chatSay(text) {
+    if (chat().ai_tier === 'none') return answer({ detail: 'Wishes need AI assistance (Standard or Plus): at No AI there is no model to tell.' }, 409);
+    text = text.split(/\s+/).join(' ').trim().slice(0, 160);
+    if (!text) return answer({ detail: 'Type a wish first' }, 400);
+    const mine = said('you', text), active = chatActive();
+    const clearing = text.match(/^\s*(?:clear|reset|cancel|forget|drop|undo|never ?mind|back to (?:the )?(?:brief|normal))\b(?:\s+(?:it|that|all|everything|them))*\s*(.*?)[.!]*\s*$/i);
+    const way = /\b(less|fewer|not so much|too much|stop|avoid|no more|never|don'?t|away from|skip|enough)\b/i.test(text) ? 'less' : /\b(only|just|stay on|stay with|stick to|keep on)\b/i.test(text) ? 'only' : /\b(more|focus|favou?r|feature|show|go to|cut to|watch|follow|get)\b/i.test(text) ? 'more' : null;
+    let reply;
+    if (clearing && !/\bmore\b/i.test(clearing[1] || '')) {
+      const topic = clearing[1] ? chatTopic(clearing[1]) : null;
+      const hit = active.filter(w => !topic || w.topic === topic[1]);
+      chat().wishes = active.filter(w => !hit.includes(w));
+      reply = topic ? (hit.length ? `Cleared: ${topic[2]}.` : `Nothing to clear about the ${topic[2]}.`) : hit.length ? 'Cleared. Back to the brief.' : 'Nothing to clear: only the brief is in force.';
+    } else {
+      const topic = chatTopic(text), name = topic && topic[2], on = topic && (topic[1].startsWith('camera:') || /\d$/.test(name)) ? name : `the ${name}`;
+      const replaced = topic ? active.filter(w => w.topic === topic[1]) : [];
+      let wishes = [{ id: mine.id, text, at: mine.at, until: mine.at + CHAT.lasts, topic: topic && topic[1], toward: way, about: name }, ...active.filter(w => !replaced.includes(w))];
+      const dropped = wishes.slice(CHAT.most); wishes = wishes.slice(0, CHAT.most); chat().wishes = wishes;
+      reply = !topic ? (way === 'less' ? 'Noted: less of that.' : 'On it.')
+        : replaced.length && replaced[0].toward !== way ? (way === 'less' || way === 'more' ? `Changing focus: ${way} on ${on}.` : `Changing focus: ${on}.`)
+        : way === 'less' ? `Less on ${on}.` : way === 'only' ? `Staying with ${on}.` : way === 'more' ? `More on ${on}.` : `On it: ${on}.`;
+      if (dropped.length) reply += ` Dropped the oldest wish (“${dropped[0].text}”): ${CHAT.most} at a time.`;
+      S.chatNoted = null;
+    }
+    const r = said('director', reply, { to: mine.id }); save();
+    return answer({ ...chat(), reply: r });
+  }
+  function chatCut(where) {
+    const c = chat(); if (!c || !where) return;
+    const latest = [...c.wishes].sort((a, b) => b.at - a.at)[0];
+    if (!latest || S.chatNoted === latest.id || now() - latest.at > 180) return;
+    S.chatNoted = latest.id; said('director', `Cut to ${where}: rated best by the model.`, { system: true });
+  }
+  function chatPost(body) {
+    const c = chat(); if (!c) return answer({ detail: 'Not in the demo' }, 404);
+    if ('say' in body) return chatSay(String(body.say || ''));
+    let reply = null;
+    if ('clear' in body) {
+      const active = chatActive(), hit = active.filter(w => body.clear === 'all' || w.id === body.clear);
+      c.wishes = active.filter(w => !hit.includes(w));
+      reply = said('director', body.clear === 'all' ? (hit.length ? 'Cleared. Back to the brief.' : 'Nothing to clear.') : `Cleared: “${hit[0]?.text || ''}”`);
+    } else if ('brief' in body) {
+      const text = String(body.brief).split(/\s+/).join(' ').trim();
+      if (text !== c.brief) { c.brief = text; said('you', text ? `Brief: ${text}` : 'Brief cleared', { brief: true }); reply = said('director', text ? 'Brief updated.' : 'Brief cleared: the rolling wishes only.'); }
+    } else if (body.new_show) {
+      Object.assign(c, { show: { id: Math.random().toString(16).slice(2, 10), started: now() }, wishes: [], messages: [] });
+      said('director', 'New show. The brief stays; no wishes yet.');
+    }
+    save(); return answer({ ...c, reply });
+  }
+
   // ---- answers -----------------------------------------------------------------------------------------
   const answer = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   function read(path, query) {
@@ -67,6 +147,7 @@
       const exact = a[`${path}?${query}`]; if (exact) return exact;
       const key = Object.keys(a).find(k => k.startsWith('/api/temperatures?')); return key ? a[key] : { cameras: [] };
     }
+    if (path === '/api/scene-chat' && a[path]) { chatActive(); return a[path]; }
     if (path in a) return a[path];
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
@@ -101,7 +182,7 @@
   }
   function directorPost(body) {
     const d = director(), t = now();
-    if ('take' in body) { cutTo(body.take); d.hold_until = d.enabled ? t + 10 : null; }
+    if ('take' in body) { cutTo(body.take, true); d.hold_until = d.enabled ? t + 10 : null; }
     if ('enabled' in body) { d.enabled = !!body.enabled; S.nextCut = t + 6; }
     if (body.camera_focus && typeof body.camera_focus === 'object') focusPost(body.camera_focus);
     if ('record' in body) {
@@ -123,6 +204,8 @@
     for (const k of ['on_air', 'pair', 'scene', 'since', 'enabled', 'recording', 'streaming', 'hold_until', 'cuts']) fresh.director[k] = live[k];
     fresh.cameras.forEach(c => { const was = liveCams.find(x => x.id === c.id); if (was) c.telemetry = was.telemetry; });
     S.answers['/api/cameras'] = fresh;
+    const said = kind['/api/scene-chat'];
+    if (said && chat()) Object.assign(chat(), { examples: said.examples, mode: said.mode });
     tick(); save(); return answer(S.answers['/api/event-mode']);
   }
   // Stage Shots: its layout and room map, a camera at a time and field by field, a field set to null going back to its
@@ -214,6 +297,7 @@
     if (path === '/api/logout') { note('This is a demo: there is nobody to log out.'); return answer({ logged_out: false }); }
     if (path === '/api/director') return directorPost(body);
     if (path === '/api/event-mode') return kindPost(body);
+    if (path === '/api/scene-chat') return chatPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);

@@ -690,8 +690,10 @@ async function refresh() {
         const field = (text, value, width, type = 'text') => { const input = document.createElement('input'); input.type = type; input.value = value; input.size = width; input.spellcheck = false; input.autocomplete = 'off'; const row = node('label', text + ' '); row.append(input); settings.append(row); return input; };
         const url = field('Model server address (chat completions)', ai.url, 52), model = field('Model name', ai.model, 28), key = field(`API key (${ai.key_set ? 'one is saved; leave empty to keep it' : 'if the server needs one'})`, '', 28, 'password');
         key.autocomplete = 'new-password';
-        const wishes = document.createElement('textarea'); wishes.rows = 2; wishes.cols = 70; wishes.value = ai.guidance; wishes.placeholder = 'What you want favoured, in your own words: e.g. stay on whoever is singing; wide shot between songs.';
-        const wishRow = node('label', 'Your wishes for the shots '); wishRow.append(wishes); settings.append(wishRow);
+        const wishes = document.createElement('textarea'); wishes.rows = 2; wishes.cols = 70; wishes.value = ai.guidance; wishes.placeholder = `What you want favoured, in your own words: e.g. ${words().brief || 'stay on whoever is singing; wide shot between songs.'}`;
+        // The standing brief. Wishes typed during the show go on top of it, in Scene Chat on the Show and Stage Shots pages.
+        const wishRow = node('label', 'Your wishes for the shots (the standing brief) '); wishRow.append(wishes); settings.append(wishRow);
+        settings.append(node('small', 'During the show, type wishes such as “more on the keyboards” in Scene Chat, on the Show page: they go on top of this brief.'));
         const saveAi = node('button', 'Save model settings');
         saveAi.onclick = () => { const body = { url: url.value.trim(), model: model.value.trim(), guidance: wishes.value }; if (key.value) body.key = key.value; direct({ ai: body }); };
         settings.append(saveAi);
