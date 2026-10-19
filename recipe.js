@@ -91,7 +91,7 @@
     const undo = button(p.undo ? `Undo: ${p.undo}` : 'Undo', () => step({ undo: true }), p.undo ? `Puts back: ${p.undo}` : 'Nothing to undo'); undo.disabled = busy || !p.undo;
     row.append(back, next, undo); box.append(row);
     const follow = document.createElement('select'); follow.setAttribute('aria-label', 'Who moves through the steps');
-    for (const [v, t] of [['auto', 'The director moves on when it sees the next step (you can too)'], ['manual', 'Only you (and spoken cues) move through the steps']]) { const o = node('option', t); o.value = v; o.selected = p.follow === v; follow.append(o); }
+    for (const [v, t] of [['auto', 'The director moves on when it sees the next step (you and spoken cues can too)'], ['manual', 'Only you and spoken cues move through the steps']]) { const o = node('option', t); o.value = v; o.selected = p.follow === v; follow.append(o); }
     follow.onchange = () => overlay({ follow: follow.value }); follow.disabled = busy;
     box.append(follow);
     const owed = Object.keys(p.needs || {});
@@ -240,14 +240,14 @@
   // -- spoken cues --------------------------------------------------------------------------------------------------------
   function voiceBox(v) {
     const box = node('div', ''); box.className = 'recipe-voice'; box.append(node('h3', 'Spoken cues'));
-    box.append(node('p', 'What the cook says moves the recipe on and puts things on screen. Speech is recognised on this computer: nothing heard is sent anywhere, and what was heard is kept here only, for the last few phrases, never saved.'));
+    box.append(node('p', 'What the cook says moves the recipe on and puts things on screen, alongside the director: the director keeps choosing the shots (and following the steps, if it is set to), and a spoken cue changes only the step and what is laid over the programme, taking precedence there when it is called out. Speech is recognised on this computer: nothing heard is sent anywhere, and what was heard is kept here only, for the last few phrases, never saved.'));
     const toDirector = () => { const a = document.createElement('a'); a.href = '/director'; a.textContent = 'AI assistance on the Director page'; a.onclick = event => { if (event.metaKey || event.ctrlKey || event.shiftKey) return; event.preventDefault(); history.pushState(null, '', '/director'); window.concert.pick?.('/director'); }; return a; };
     if (!v.allowed) { const need = node('p', 'Spoken cues are part of the Standard and Plus AI levels: choose one in '); need.append(toDirector(), node('span', '. You can still try a phrase below.')); need.className = 'recording-warning'; box.append(need); }
     box.append(checkbox('Act on what the cook says', v.enabled, on => voice({ enabled: on }), !v.allowed));
     const cues = node('div', ''); cues.className = 'recipe-cues';
     cues.append(checkbox('“Let’s see that recipe”: the recipe on screen, with its QR code when it has an address', v.cues.recipe, on => voice({ cues: { recipe: on } })),
-      checkbox('“Right now we’re on step two”, “next step”, “moving on to the sauce”: that step begun and popped up on screen', v.cues.step, on => voice({ cues: { step: on } })),
-      checkbox('An ingredient on the list named: its line at the foot of the screen for a few seconds', v.cues.ingredient, on => voice({ cues: { ingredient: on } })));
+      checkbox('“Right now we’re on step two”, “next step”, “back a step”, “back to the sauce”, “the final step”: that step begun, forward or back, and popped up on screen', v.cues.step, on => voice({ cues: { step: on } })),
+      checkbox('An ingredient on the list named: its line at the foot of the screen for a few seconds; called out (“now to our butter”), shown again even if it just was', v.cues.ingredient, on => voice({ cues: { ingredient: on } })));
     box.append(cues);
     if (v.enabled) {
       const where = node('p', ''); where.className = 'recipe-load-row';

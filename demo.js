@@ -295,11 +295,17 @@
     .map(part => normal(part).split(' ').filter(w => !/^[\d.½¼¾⅓⅔]+$/.test(w) && !UNITS.has(w) && !PREPARED.has(w) && w.length > 1).map(singular).slice(-4)).filter(n => n.length);
   const NEG = /\b(not|don't|dont|didn't|won't|never|isn't|aren't|wasn't|no|can't)\b/;
   const negated = (text, start) => NEG.test(text.slice(0, start).split(' ').slice(-4).join(' '));
-  const LED = "(?:on|onto|to|at|for|into|now|start|starting|begin|beginning|it's|its|this is|here's|that's|we're|were|time for)";
+  const LED = "(?:on|onto|to|at|for|into|now|start|starting|begin|beginning|it's|its|this is|here's|that's|we're|were|time for|revisit|revisiting|redo|redoing)";
   const STEPS = [[new RegExp(`\\b${LED}\\s+(?:the\\s+|our\\s+)?(?:(prep|preparation)\\s+)?step\\s+(?:number\\s+)?(\\d{1,2})\\b`), 1], [new RegExp(`\\b${LED}\\s+(?:the|our)\\s+(\\d{1,2})\\s+(?:(prep|preparation)\\s+)?step\\b`), 1, true],
-    [/\b(?:(prep|preparation)\s+)?step\s+(?:number\s+)?(\d{1,2})\s+(?:now|next)\b/, 1], [/^(?:\S+\s+){0,2}?(?:(prep|preparation)\s+)?step\s+(?:number\s+)?(\d{1,2})\b(?!\s+(?:is|was|will|would|can|could|should|where|when|that|of|in)\b)/, 0.85]];
+    [/\b(?:(prep|preparation)\s+)?step\s+(?:number\s+)?(\d{1,2})\s+(?:now|next|again)\b/, 1], [/^(?:\S+\s+){0,2}?(?:(prep|preparation)\s+)?step\s+(?:number\s+)?(\d{1,2})\b(?!\s+(?:is|was|will|would|can|could|should|where|when|that|of|in)\b)/, 0.85]];
   const ELSEWHERE = /\b(?:in|after|before|from|since|during|like|skip|skipping|until|till)\s+(?:the\s+)?(?:(?:prep|preparation)\s+)?step\s+(?:number\s+)?\d/;
   const NEXT = /\b(?:on|onto|to|for)\s+(?:the|our)\s+next\s+step\b|^(?:\S+\s+){0,2}?(?:the\s+)?next\s+step\b|\bnext\s+step\s*(?:now|then|please)?$|\b(?:moving|move|let's move|lets move|we'll move|carry|carrying|time to move)\s+on\b(?!\s+to\b)/;
+  const BACK = /\b(?:go|going|let's go|lets go|we'll go|jump|jumping|step|stepping|head|heading|come|coming)\s+back\s+(?:a|one)\s+step\b|\bback\s+a\s+step\b|\b(?:to|on|onto)\s+(?:the|our)\s+(?:previous|step before)\b|^(?:\S+\s+){0,2}?(?:the\s+)?previous\s+step\b|\bback\s+to\s+(?:the|our)\s+last\s+step\b/;
+  const BACK_ELSEWHERE = /\b(?:in|after|before|during|like|from)\s+(?:the|our)\s+(?:previous|last)\s+step\b/;
+  const FINAL = /\b(?:on|onto|to|for|at|now)\s+(?:the|our)\s+(?:final|very last|last)\s+step\b|^(?:\S+\s+){0,2}?(?:the\s+)?final\s+step\b/;
+  const BACK_TO = /\b(?:go|going|let's go|lets go|we'll go|jump|jumping|head|heading|come|coming|get|getting)?\s*back\s+to\s+(?:the\s+|our\s+)?(.+)$/;
+  const JUMP_TO = /\b(?:jump|jumping|skip|skipping|fast forward)\s+(?:ahead\s+|forward\s+|back\s+)?to\s+(?:the\s+|our\s+)?(.+)$/;
+  const CALLED = /\b(?:now to|on to|onto|back to|time for|next up|here's|here is|here are|here comes|in goes|in go|let's add|lets add|add our|grab our|our)\b/;
   const MOVING = /\b(?:moving|move|let's move|lets move|we'll move|carry|carrying|going|let's go)\s+on\s+to\s+(?:the\s+|our\s+)?(.+)$/;
   const RECIPE = /\b(?:see|show|look at|have a look at|take a look at|pull up|put up|bring up|check out|pop up)\s+(?:you\s+|us\s+|me\s+|everyone\s+|you guys\s+)?(?:the|that|this|our|my|a)\s+(?:full\s+|whole\s+)?recipe\b(?!\s+(?:calls|says|uses|needs|asks|wants|has|is|was|said|will|book|card)\b)|\bhere's\s+(?:the|that|our|my)\s+(?:full\s+)?recipe\b|\brecipe\s+(?:on|up on)\s+(?:the\s+)?screen\b/;
   const STOP = new Set('the a an to on onto and then our my some of in into with for it its this that now we let\'s go next bit part so okay ok right is are'.split(' '));
@@ -312,16 +318,23 @@
       found.push({ kind: 'step', score, id: target?.id || null, label: target?.label || `${prep ? 'Prep' : 'Step'} ${n}` }); break;
     }
     if (!found.length) {
-      const m = text.match(NEXT);
-      if (m && !negated(text, m.index) && !/\b(?:in|after|before|until|during)\s+(?:the|our)\s+next\s+step\b/.test(text)) found.push({ kind: 'next', score: 1 });
+      const m = text.match(NEXT), back = text.match(BACK), final = text.match(FINAL), method = steps.filter(s => s.section === 'method');
+      if (back && !negated(text, back.index) && !BACK_ELSEWHERE.test(text)) found.push({ kind: 'back', score: 1 });
+      else if (final && !negated(text, final.index) && !BACK_ELSEWHERE.test(text) && method.length) found.push({ kind: 'step', score: 1, id: method[method.length - 1].id, label: method[method.length - 1].label });
+      else if (m && !negated(text, m.index) && !/\b(?:in|after|before|until|during)\s+(?:the|our)\s+next\s+step\b/.test(text)) found.push({ kind: 'next', score: 1 });
       else {
-        const moving = text.match(MOVING);
-        if (moving && !negated(text, moving.index)) {
-          const wanted = moving[1].split(' ').filter(w => !STOP.has(w)).map(singular).slice(0, 6), here = S.cook.current == null ? -1 : at(S.cook.current);
-          let best = 0, second = 0, chosen = null;
-          steps.forEach((s, n) => { if (n <= here || !wanted.length) return; const have = new Set(normal(`${s.caption} ${s.text}`).split(' ').map(singular)); const share = wanted.filter(w => have.has(w)).length / wanted.length;
-            if (share > best) { second = best; best = share; chosen = s; } else if (share > second) second = share; });
-          if (chosen && best >= 0.5 && best > second) found.push({ kind: 'step', score: 0.6 + 0.4 * best, id: chosen.id, label: chosen.label });
+        // A step by its words: ahead ("moving on to the sauce"), behind ("back to the sauce"), or anywhere ("jump to the eggs").
+        const here = S.cook.current == null ? -1 : at(S.cook.current);
+        for (const [pattern, keep] of [[MOVING, n => n > here], [BACK_TO, n => n < here], [JUMP_TO, n => n !== here]]) {
+          const moving = text.match(pattern);
+          if (!moving || negated(text, moving.index)) continue;
+          const wanted = moving[1].split(' ').filter(w => !STOP.has(w)).map(singular).slice(0, 6);
+          // Equally good matches go to the nearest: "back to the garlic" is the last garlic step, not the first.
+          let best = 0, chosen = null;
+          steps.map((s, n) => [s, n]).filter(([, n]) => keep(n) && wanted.length).sort((a, b) => Math.abs(a[1] - here) - Math.abs(b[1] - here)).forEach(([s]) => {
+            const have = new Set(normal(`${s.caption} ${s.text}`).split(' ').map(singular)); const share = wanted.filter(w => have.has(w)).length / wanted.length;
+            if (share > best) { best = share; chosen = s; } });
+          if (chosen && best >= 0.5) { found.push({ kind: 'step', score: 0.6 + 0.4 * best, id: chosen.id, label: chosen.label }); break; }
         }
       }
     }
@@ -336,7 +349,8 @@
     for (const one of seen) {
       const rivals = seen.filter(o => o.index !== one.index && [...o.heads].some(h => one.heads.has(h))).map(o => o.best[0]);
       if (rivals.length && one.best[0] <= Math.max(...rivals)) continue;
-      found.push({ kind: 'ingredient', score: 0.85 + 0.15 * one.best[1], line: lines[one.index], index: one.index, where: one.where });
+      const called = CALLED.test(text.split(' ').slice(Math.max(0, one.where - 4), one.where).join(' '));
+      found.push({ kind: 'ingredient', score: 0.85 + 0.15 * one.best[1], line: lines[one.index], index: one.index, where: one.where, called });
     }
     return found.sort((a, b) => (a.kind === 'ingredient' && b.kind === 'ingredient' ? a.where - b.where : 0));
   }
@@ -354,20 +368,24 @@
     if (!r.recipe) return refused('No recipe is loaded', 409);
     const t = now(), entry = { at: t, text: String(body.say).slice(0, 240), sure: 1, typed: true, did: null, why: null }, reasons = [];
     S.lastCue = S.lastCue || {};
-    const rest = { recipe: 20, step: 4, next: 8, ingredient: 5 };
+    const rest = { recipe: 20, step: 4, next: 8, back: 8, ingredient: 5 };
     for (const cue of cues(normal(body.say))) {
-      const kind = cue.kind === 'next' ? 'step' : cue.kind;
+      const kind = ['next', 'back'].includes(cue.kind) ? 'step' : cue.kind;
       if (!v.cues[kind]) { reasons.push(`${kind} cues are off`); continue; }
       if (cue.score < v.min_confidence) { reasons.push(`not sure enough (${cue.score.toFixed(2)} of ${v.min_confidence.toFixed(2)} needed)`); continue; }
       const key = cue.kind === 'ingredient' ? `ingredient:${cue.index}` : cue.kind;
-      if (t - (S.lastCue[key] || -1e9) < (cue.kind === 'ingredient' ? 45 : rest[cue.kind])) { reasons.push('said again too soon'); continue; }
+      // An ingredient called out ("now to our butter") is shown again even if it just was; named in passing, it rests.
+      const resting = cue.kind === 'ingredient' ? (cue.called ? t - (S.lastCue.ingredient || -1e9) < 2 : t - (S.lastCue[key] || -1e9) < 45) : t - (S.lastCue[key] || -1e9) < rest[cue.kind];
+      if (resting) { reasons.push('said again too soon'); continue; }
       if (cue.kind === 'recipe') { S.cook.flash.recipe = { until: t + 30 }; entry.did = `showed the recipe${r.recipe.url ? ' and its QR code' : ''} for 30 s`; }
-      else if (cue.kind === 'step' || cue.kind === 'next') {
+      else if (['step', 'next', 'back'].includes(cue.kind)) {
         if (cue.kind === 'step' && !cue.id) { reasons.push(`heard ${cue.label}, but the recipe has no ${cue.label}`); continue; }
         if (cue.kind === 'step' && cue.id === S.cook.current) { reasons.push(`already on ${cue.label}`); continue; }
-        const n = cue.kind === 'next' ? upcoming() : at(cue.id); if (n == null) { reasons.push('heard “next step”, but there is no step after this one'); continue; }
+        const here = S.cook.current == null ? -1 : at(S.cook.current);
+        if (cue.kind === 'back' && here <= 0) { reasons.push('heard “back a step”, but there is no step before this one'); continue; }
+        const n = cue.kind === 'next' ? upcoming() : cue.kind === 'back' ? here - 1 : at(cue.id); if (n == null) { reasons.push('heard “next step”, but there is no step after this one'); continue; }
         const s = begin(n, 'voice'); popUp(s); entry.did = `moved to ${s.label} and showed it on screen`;
-      } else { S.cook.flash.lower = { text: cue.line, until: t + 6 }; entry.did = `showed “${cue.line}” at the foot of the screen`; }
+      } else { S.cook.flash.lower = { text: cue.line, until: t + 6 }; entry.did = `showed “${cue.line}” at the foot of the screen${cue.called ? ' (called out)' : ''}`; S.lastCue.ingredient = t; }
       S.lastCue[key] = t; break;
     }
     if (!entry.did) entry.why = [...new Set(reasons)].join('; ') || 'no cue in it';
