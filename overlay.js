@@ -11,14 +11,20 @@ function fade(element, show, then) {
   if (show && then) { element.classList.add('fading'); setTimeout(() => { then(); element.classList.remove('fading'); }, 450); }
 }
 
-function fit(card) {
-  // The whole recipe in its panel: the type made smaller until it fits (down to a size still readable on a phone).
+function fit(card, tries = 10) {
+  // The whole recipe in its panel: the type made smaller until it fits (down to a size still readable on a phone). It is
+  // measured once shown: while hidden it has no size, and fitted then it was never made smaller (2026-10-19).
+  if (card.hidden) { if (tries) requestAnimationFrame(() => fit(card, tries - 1)); return; }
+  // The preparation all done and the method under way: it folds away, to leave the room to the method.
+  const prep = [...$('prep').children];
+  $('prep-part').hidden = !prep.length || (prep.every(li => li.classList.contains('done')) && !!$('steps').querySelector('li.current'));
   let size = 1.05;
   card.style.fontSize = `${size}vw`;
   while (card.scrollHeight > card.clientHeight + 1 && size > 0.62) { size -= 0.04; card.style.fontSize = `${size}vw`; }
-  // Still too long: the current step kept in view.
-  const now = card.querySelector('li.current');
-  if (now && card.scrollHeight > card.clientHeight + 1) card.scrollTop = Math.max(0, now.offsetTop - card.clientHeight / 3);
+  // Still too long: the current step kept in view, and the foot faded rather than cut off mid-line.
+  const now = card.querySelector('li.current'), over = card.scrollHeight > card.clientHeight + 1;
+  card.classList.toggle('more', over);
+  if (now && over) card.scrollTop = Math.max(0, now.offsetTop - card.clientHeight / 3);
 }
 
 function fill(state) {
