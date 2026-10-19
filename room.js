@@ -2,7 +2,7 @@
 // The room map, reached from Stage Shots' Arrange: the room from above, the stage at the top and the house below, with
 // each camera where it stands and a wedge for what it sees. Drag a camera to move it; drag the round handle in front
 // of it to turn it, or type the angle. Laid out once at setup: Stage Shots' camera marks follow from it (see
-// roommap.py), except where one was set by hand in Arrange. Uses stage.js's state and helpers: it is loaded after it,
+// roommap.py), each with a wedge as wide as on the map. Uses stage.js's state and helpers: it is loaded after it,
 // on the manager's dashboard only.
 //
 // Room view puts the two together: the shot buttons stand on the map's stage where the performers are, the wide shots
@@ -12,7 +12,6 @@
 // offered on a screen too narrow for buttons a finger can press on a map that small.
 (() => {
   const NS = 'http://www.w3.org/2000/svg', W = 1000;
-  const COLOURS = ['#4cc9f0', '#f4a261', '#90be6d', '#f78fb3', '#b5a1ff', '#ffd166', '#2ec4b6', '#ff7b72'];
   const panel = document.querySelector('#room'), button = document.querySelector('#roommap'), together = document.querySelector('#roomview');
   const NARROWEST = 720;              // pixels across, below which Room view is not offered
   let open = false, chosen = null, built = null, held = null, combined = false;
@@ -24,7 +23,7 @@
   const room = () => state.room;
   const H = () => room().depth * W;
   const spot = id => local[id] || room().map[id];
-  const colour = camera => COLOURS[(camera.slot - 1 + COLOURS.length) % COLOURS.length];
+  const colour = cameraColour;
   const fovOf = id => spot(id)?.fov ?? room().map[id]?.fov ?? room().views[id]?.fov ?? 70;
   const turn = degrees => ((Math.round(degrees) % 360) + 360) % 360;
 
@@ -170,7 +169,7 @@
   // The camera chosen: where it stands, its aim exactly, what it sees and why, and what Stage Shots takes from it.
   function details() {
     const box = panel.querySelector('.details'), c = chosen && state.cameras.find(o => o.id === chosen), entry = c && spot(c.id);
-    if (!c || !entry) { box.replaceChildren(node('p', 'Press a camera on the map to set it exactly. Stage Shots’ camera marks follow from this map, unless a mark was set by hand in Arrange.')); box.dataset.key = ''; return; }
+    if (!c || !entry) { box.replaceChildren(node('p', 'Press a camera on the map to set it exactly. Stage Shots’ camera marks follow from this map, with the same wedge for what each camera sees.')); box.dataset.key = ''; return; }
     const view = room().views[c.id] || { fov: 70, lens: 'usual lens', source: 'typical' }, own = room().map[c.id]?.fov, derived = room().derived[c.id], hand = state.layout[c.id]?.cam;
     const key = JSON.stringify([c.id, entry, view, own, derived, hand, !!state.remote, shows(c)]);
     if (box.dataset.key === key) return;
@@ -209,8 +208,7 @@
     // What Stage Shots takes from it.
     if (derived) {
       const follows = node('div', undefined, 'field');
-      const marked = `In Stage Shots its button’s mark shows the camera ${standsWord(derived.cam.at)}, pointing ${aimWord(derived.cam.aim)}.`;
-      follows.append(node('p', hand ? `${marked} A mark set by hand in Arrange is shown instead, until it is put back.` : marked));
+      follows.append(node('p', `In Stage Shots its button’s mark shows the camera ${standsWord(derived.cam.at)}, pointing ${aimWord(derived.cam.aim)}, with this wedge.`));
       if (derived.w) follows.append(node('small', `It takes in about ${Math.round(derived.w * 100)}% of the ${c.kind === 'crowd' ? words().audience || 'audience' : 'stage'}’s width there: Arrange offers that as its button’s width.`));
       box.append(follows);
     }

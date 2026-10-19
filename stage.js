@@ -13,6 +13,9 @@ const places = {}, sizes = {}, talls = {}, marks = {}, tiles = new Map();
 const stage = document.querySelector('#stage'), result = document.querySelector('#result'), hint = document.querySelector('#hint'), now = document.querySelector('#now');
 const zones = { single: document.querySelector('#performers'), wide: document.querySelector('#wides'), crowd: document.querySelector('#crowds') };
 const buttons = { auto: document.querySelector('#auto'), split: document.querySelector('#split'), arrange: document.querySelector('#arrange') };
+// Each camera's colour, by its slot: its wedge here and on the room map, and its outline when placing from the wide shot.
+const COLOURS = ['#4cc9f0', '#f4a261', '#90be6d', '#f78fb3', '#b5a1ff', '#ffd166', '#2ec4b6', '#ff7b72'];
+const cameraColour = camera => COLOURS[(camera.slot - 1 + COLOURS.length) % COLOURS.length];
 const FRONT = 0.625;            // the middle of a button's lower edge, a quarter round its edge for each side from the top left
 function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
 async function api(path, body) { const r = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: body === undefined ? undefined : JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw Error(d.detail || `HTTP ${r.status}`); return d; }
@@ -46,7 +49,12 @@ const saved = id => state.layout[id] || {};
 const widthOf = camera => sizes[camera.id] ?? saved(camera.id).w ?? state.widths?.[kindOf(camera)] ?? (kindOf(camera) === 'single' ? 0.18 : 1);
 const heightOf = camera => talls[camera.id] ?? saved(camera.id).h ?? 1;
 const fromRoom = id => state.room?.derived?.[id];
-const markOf = camera => marks[camera.id] || saved(camera.id).cam || fromRoom(camera.id)?.cam || { at: FRONT, aim: 0 };
+// A camera placed on the room map takes its mark from there: the map is where it stands and points, so a mark set
+// earlier in Arrange no longer applies (it is kept, and used again if the camera comes off the map).
+const onMap = id => !!state.room?.map?.[id];
+const markOf = camera => marks[camera.id] || (onMap(camera.id) && fromRoom(camera.id)?.cam) || saved(camera.id).cam || { at: FRONT, aim: 0 };
+// How wide it sees, in degrees, as the room map draws it: set by the administrator, else from the lens in use.
+const fovOf = camera => state.room?.map?.[camera.id]?.fov ?? state.room?.views?.[camera.id]?.fov ?? 70;
 function place(camera) {
   // Performers not yet arranged stand in a row across the front of the stage, in slot order, spaced so that they do
   // not cover each other. A wide or crowd camera's place is its order along its row.
@@ -137,7 +145,7 @@ function draw() {
     if (kind !== 'single') tile.style.order = String(along.get(camera.id));
     size(tile, camera); aim(tile, camera);
   });
-  apart(); tools(); defaults();
+  apart(); views(); tools(); defaults();
   if (window.roomDraw) window.roomDraw();
   if (window.placeDraw) window.placeDraw();
 }
@@ -178,18 +186,51 @@ function size(tile, camera) {
   const x = half >= 0.5 ? 0.5 : Math.min(1 - half, Math.max(half, at.x)), y = tall >= 0.5 ? 0.5 : Math.min(1 - tall, Math.max(tall, at.y));
   tile.style.left = `${x * 100}%`; tile.style.top = `${y * 100}%`;
 }
+// What each camera on the room map sees, drawn across the stage as on the map: the same wedge, only the part of it on
+// the stage. The stage here is the map's stage stretched to this picture's shape, so a wedge covers the same performers
+// here as there. The camera on air has the strongest; in Arrange, the one pressed.
+function views() {
+  const zone = zones.single, room = state.room;
+  let svg = zone.querySelector('svg.views');
+  if (!room?.stage || !Object.keys(room.map || {}).length) { svg?.remove(); return; }
+  const NS = 'http://www.w3.org/2000/svg', left = room.stage.left, deep = room.stage.front * room.depth;
+  if (!svg) { svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'views'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('preserveAspectRatio', 'none'); zone.prepend(svg); }
+  svg.setAttribute('viewBox', `${left} 0 ${room.stage.right - left} ${deep}`);
+  const pair = state.director.pair || [], live = id => id === state.director.on_air || pair.includes(id);
+  const wanted = state.cameras.filter(c => room.map[c.id]).sort((a, b) => live(a.id) - live(b.id));
+  svg.replaceChildren(...wanted.map(camera => {
+    const entry = room.map[camera.id], fov = Math.min(170, Math.max(2, fovOf(camera))), x = entry.x, y = entry.y * room.depth, far = 4, path = document.createElementNS(NS, 'path');
+    // The wedge's two edges and an arc between them, far beyond the stage; the picture's edge cuts it to the stage.
+    const points = Array.from({ length: 13 }, (_, i) => { const t = (entry.aim - fov / 2 + fov * i / 12) * Math.PI / 180; return `${(x + far * Math.sin(t)).toFixed(4)} ${(y - far * Math.cos(t)).toFixed(4)}`; });
+    path.setAttribute('d', `M${x} ${y} L${points.join(' L')} Z`);
+    path.setAttribute('class', `view${live(camera.id) ? ' live' : ''}${arranging && selected === camera.id ? ' chosen' : ''}`);
+    path.style.fill = path.style.stroke = cameraColour(camera);
+    return path;
+  }));
+}
+
 // The camera mark: a dot for the camera, an arrowhead the way it points.
+// The camera mark: a dot for the camera and, opening from it the way it points, a wedge as wide as it sees, as on the
+// room map: a telephoto's is a sliver, an ultrawide's a broad fan.
 function mark() {
   const holder = node('span', undefined, 'cam'), svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '-10 -10 20 20'); svg.setAttribute('aria-hidden', 'true');
-  const dot = document.createElementNS(svg.namespaceURI, 'circle'); dot.setAttribute('r', '3.6');
-  const head = document.createElementNS(svg.namespaceURI, 'path'); head.setAttribute('d', 'M0 -9.5 L5.5 -2.5 L-5.5 -2.5 Z');
-  svg.append(dot, head); holder.append(svg); return holder;
+  const view = document.createElementNS(svg.namespaceURI, 'path'); view.setAttribute('class', 'view');
+  const dot = document.createElementNS(svg.namespaceURI, 'circle'); dot.setAttribute('r', '3.4');
+  svg.append(view, dot); holder.append(svg); return holder;
+}
+function wedge(fov) {
+  // Pointing up the page before it is turned; long enough to read its angle, short enough to stay near its button's edge.
+  const r = 22, half = Math.min(170, Math.max(2, fov)) / 2 * Math.PI / 180, x = (r * Math.sin(half)).toFixed(2), y = (-r * Math.cos(half)).toFixed(2);
+  return `M0 0 L${-x} ${y} A${r} ${r} 0 0 1 ${x} ${y} Z`;
 }
 function aim(tile, camera) {
   const m = markOf(camera), [x, y] = onEdge(m.at), holder = tile.querySelector('.cam');
   holder.style.left = `${x * 100}%`; holder.style.top = `${y * 100}%`; holder.firstChild.style.transform = `rotate(${m.aim}deg)`;
-  holder.title = capital(markWords(camera));
+  holder.querySelector('.view').setAttribute('d', wedge(fovOf(camera)));
+  tile.classList.toggle('mapped', onMap(camera.id));
+  holder.style.color = onMap(camera.id) ? cameraColour(camera) : '';
+  holder.title = `${capital(markWords(camera))}, seeing ${Math.round(fovOf(camera))}° across${onMap(camera.id) ? ' (from the room map)' : ''}`;
 }
 
 async function keep(id, entry) {
@@ -205,7 +246,7 @@ function tools() {
   if (!camera) { panel.dataset.key = ''; return; }
   const kind = kindOf(camera), own = saved(camera.id).w, fallback = state.widths?.[kind] ?? 0.18, m = markOf(camera);
   const suggested = fromRoom(camera.id)?.w, derivedMark = fromRoom(camera.id)?.cam;
-  const key = JSON.stringify([camera.id, own, saved(camera.id).h, fallback, saved(camera.id).cam, shows(camera), suggested, derivedMark]);
+  const key = JSON.stringify([camera.id, own, saved(camera.id).h, fallback, saved(camera.id).cam, shows(camera), suggested, derivedMark, state.room?.map?.[camera.id], fovOf(camera)]);
   if (panel.dataset.key === key) return;
   const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.k : null;
   panel.dataset.key = key; panel.replaceChildren();
@@ -231,9 +272,26 @@ function tools() {
     const take = node('button', `Use the room map’s ${Math.round(suggested * 100)}% wide`); take.dataset.k = 'size-room'; take.onclick = () => keep(camera.id, { w: suggested }); width.append(take);
   }
   panel.append(width);
-  // The camera mark: round the edge, and which way it points.
+  // The camera mark: round the edge, and which way it points. On the room map, that is where it is set.
   const where = node('div', undefined, 'field');
-  where.append(node('p', `Its camera stands ${standsWord(m.at)}, pointing ${aimWord(m.aim)}${saved(camera.id).cam || !derivedMark ? '' : ': from the room map'}.`));
+  if (onMap(camera.id)) {
+    where.append(node('p', `On the room map: its camera stands ${standsWord(m.at)}, pointing ${aimWord(m.aim)}, seeing ${Math.round(fovOf(camera))}° across. Its mark here follows the map.`));
+    // The way it points can be turned from here as well; it is the room map's that changes. Where it stands is moved
+    // on the map itself, and only at the manager's dashboard.
+    if (window.concert) {
+      const entry = state.room.map[camera.id], compass = node('div', undefined, 'compass'), turnTo = to => act('/api/stage', { room: { [camera.id]: { aim: ((Math.round(to) % 360) + 360) % 360 } } }).then(answer => { if (answer) { state = answer; draw(); } });
+      for (const [text, by, says] of [['−15°', -15, 'Turn it 15 degrees anticlockwise'], ['−5°', -5, 'Turn it 5 degrees anticlockwise'], ['+5°', 5, 'Turn it 5 degrees clockwise'], ['+15°', 15, 'Turn it 15 degrees clockwise']]) {
+        const b = node('button', text); b.dataset.k = `turn${by}`; b.setAttribute('aria-label', says); b.onclick = () => turnTo(entry.aim + by); compass.append(b);
+      }
+      where.append(compass);
+      const open = node('button', 'Open the room map'); open.dataset.k = 'open-room'; open.onclick = () => document.querySelector('#roommap')?.click(); where.append(open);
+    } else where.append(node('p', 'Where it stands and points is changed on the room map, at the manager’s dashboard.'));
+    panel.append(where);
+    const done = node('button', 'Close'); done.dataset.k = 'close'; done.onclick = () => { selected = null; draw(); }; panel.append(done);
+    if (focused) panel.querySelector(`[data-k="${CSS.escape(focused)}"]`)?.focus();
+    return;
+  }
+  where.append(node('p', `Its camera stands ${standsWord(m.at)}, pointing ${aimWord(m.aim)}, seeing about ${Math.round(fovOf(camera))}° across. Place it on the room map to have this follow where it really is.`));
   const round = node('div', undefined, 'compass');
   for (const [text, step, says] of [['◀ Round', -1 / 16, 'Move the camera mark anticlockwise round the edge'], ['Round ▶', 1 / 16, 'Move the camera mark clockwise round the edge']]) {
     const b = node('button', text); b.dataset.k = text; b.setAttribute('aria-label', says);
@@ -252,7 +310,7 @@ function tools() {
   turn.oninput = () => { marks[camera.id] = { at: m.at, aim: Number(turn.value) }; degrees.textContent = `${turn.value}°`; aim(tiles.get(camera.id), camera); };
   turn.onchange = () => keep(camera.id, { cam: { at: m.at, aim: Number(turn.value) } });
   angle.append(turn, degrees); where.append(angle);
-  const plain = node('button', derivedMark ? 'Follow the room map again' : 'Put the mark back in front'); plain.dataset.k = 'mark-reset'; plain.disabled = !saved(camera.id).cam; plain.onclick = () => keep(camera.id, { cam: null });
+  const plain = node('button', 'Put the mark back in front'); plain.dataset.k = 'mark-reset'; plain.disabled = !saved(camera.id).cam; plain.onclick = () => keep(camera.id, { cam: null });
   where.append(plain); panel.append(where);
   const done = node('button', 'Close'); done.dataset.k = 'close'; done.onclick = () => { selected = null; draw(); }; panel.append(done);
   if (focused) panel.querySelector(`[data-k="${CSS.escape(focused)}"]`)?.focus();
@@ -314,7 +372,8 @@ function wire(tile, id) {
   tile.addEventListener('pointerdown', event => {
     if (!arranging || !camera()) return;
     const corner = event.target.closest('.corner');
-    how = corner ? 'size' : event.target.closest('.cam') ? 'mark' : 'move';
+    // A mark taken from the room map is not dragged here: the button moves instead.
+    how = corner ? 'size' : event.target.closest('.cam') && !onMap(id) ? 'mark' : 'move';
     start = { x: event.clientX, y: event.clientY, box: tile.getBoundingClientRect(), corner: corner?.dataset.corner }; moved = false; dragging = id; tile.classList.add('dragging'); tile.setPointerCapture(event.pointerId);
     event.preventDefault();
   });

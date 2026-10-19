@@ -7,14 +7,13 @@
 // its performer seems to play, for the operator to take with a press ("guitar or bass?" when it cannot tell). Uses
 // stage.js's state, helpers and act(); loaded after it, on the manager's dashboard only.
 (() => {
-  const COLOURS = ['#4cc9f0', '#f4a261', '#90be6d', '#f78fb3', '#b5a1ff', '#ffd166', '#2ec4b6', '#ff7b72'];
   const bar = document.querySelector('#bar'), panel = document.querySelector('#place');
   if (!panel) return;
   const button = node('button', 'Place from the wide shot '), badge = node('span', 'Experimental', 'badge warn');
   button.id = 'place-open'; button.setAttribute('aria-pressed', 'false'); button.hidden = true; button.append(badge); bar.append(button);
   let open = false, report = null, wide = null, busy = false, said = '', drawn = '', undo = null, polling = null;
   const use = {}, aims = {};                       // camera id -> ticked to apply its place / its room-map aim
-  const colour = camera => COLOURS[(camera.slot - 1 + COLOURS.length) % COLOURS.length];
+  const colour = cameraColour;
   const named = id => { const c = state.cameras.find(o => o.id === id); return c ? `${shows(c)} (${c.name})` : id; };
 
   async function ask() {

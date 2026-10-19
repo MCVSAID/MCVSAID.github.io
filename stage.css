@@ -28,8 +28,16 @@
 .shot.picked { border-color:#ffd17a; box-shadow:0 0 0 3px #ffd17a66; } .shot.picked em { color:#ffe3a8; }
 .shot.dead { background:#26323d; color:#a9b9c7; border-style:dashed; } .shot.dead > span:not(.cam):not(.corner) { color:#8fa2b3; }
 /* The camera mark: where the camera stands on the button's edge and the way it points. Quiet while shots are chosen. */
-.shot .cam { position:absolute; width:20px; height:20px; transform:translate(-50%,-50%); color:#eef4f8; opacity:.75; pointer-events:none; z-index:1; }
+.shot .cam { position:absolute; width:20px; height:20px; transform:translate(-50%,-50%); color:#ffffff; opacity:.9; pointer-events:none; z-index:1; }
 .shot .cam svg { display:block; width:100%; height:100%; fill:currentColor; filter:drop-shadow(0 0 1px #000); }
+/* What each camera on the room map sees, across the stage, under the buttons: faint and dashed, as on the map; the
+   camera on air (or, in Arrange, the one pressed) filled and solid. */
+#performers svg.views { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:0; border-radius:10px; }
+#performers svg.views .view { fill-opacity:.07; stroke-opacity:.55; stroke-width:1.5; stroke-dasharray:6 6; vector-effect:non-scaling-stroke; }
+#performers svg.views .view.live, #performers svg.views .view.chosen { fill-opacity:.2; stroke-opacity:.95; stroke-dasharray:none; stroke-width:2; }
+/* The wedge: what the camera sees, as wide as the room map draws it. Faint, so it never hides a name. */
+.shot b, .shot > span:not(.cam):not(.corner), .shot em { position:relative; z-index:2; }
+.shot .cam svg { overflow:visible; } .shot .cam .view { fill:currentColor; fill-opacity:.28; stroke:currentColor; stroke-opacity:.9; stroke-width:.9; stroke-linejoin:round; }
 .shot.on-air .cam { color:#ffd0d0; }
 .shot .corner { display:none; }
 /* Arrange: everything that can be dragged shows it, and is big enough to catch with a finger. */
@@ -37,6 +45,8 @@
 :is(#stage, #room.together).arranging .shot { cursor:grab; border-style:dotted; touch-action:none; } :is(#stage, #room.together).arranging .shot.dragging { cursor:grabbing; box-shadow:0 6px 18px #000a; z-index:3; }
 :is(#stage, #room.together).arranging .shot.selected { border-style:solid; border-color:#8fd3ff; box-shadow:0 0 0 3px #8fd3ff66; z-index:2; }
 :is(#stage, #room.together).arranging .shot .cam { width:34px; height:34px; opacity:1; pointer-events:auto; cursor:grab; border-radius:50%; background:#0d151cd0; outline:2px solid #8fd3ff; padding:5px; box-sizing:border-box; color:#8fd3ff; }
+/* A mark from the room map is set there, so it does not catch the pointer here: dragging it moves the button. */
+:is(#stage, #room.together).arranging .shot.mapped .cam { pointer-events:none; outline-style:dashed; }
 /* A handle at each corner: a finger-sized catch around a small square drawn on the corner. */
 :is(#stage, #room.together).arranging .shot .corner { display:block; position:absolute; width:32px; height:32px; z-index:2; }
 :is(#stage, #room.together).arranging .shot .corner::after { content:''; position:absolute; top:50%; left:50%; width:12px; height:12px; transform:translate(-50%,-50%); background:#8fd3ff; border:2px solid #0d151c; border-radius:2px; }
