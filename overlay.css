@@ -4,7 +4,7 @@ body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #ff
 [hidden] { display: none !important; }
 .panel { position: absolute; background: rgba(14, 18, 24, 0.82); border-radius: 1vw; box-shadow: 0 0.4vw 1.6vw rgba(0, 0, 0, 0.35);
   transition: opacity 0.45s ease; opacity: 1; }
-.panel.fading, #caption.fading { opacity: 0; }
+.panel.fading, #caption.fading, #lower.fading { opacity: 0; }
 
 #card { top: 5vh; width: 29vw; max-height: 60vh; padding: 1.6vw 1.8vw; overflow: hidden; font-size: 1.05vw; line-height: 1.35; }
 .side-right #card, .side-right #qr { right: 3vw; }
@@ -14,11 +14,12 @@ body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #ff
 #card h2 { margin: 0.8em 0 0.3em; font-size: 0.85em; letter-spacing: 0.12em; text-transform: uppercase; color: #f6c35b; }
 #ingredients { margin: 0; padding-left: 1.1em; columns: 2; column-gap: 1.6em; }
 #ingredients li { break-inside: avoid; margin-bottom: 0.15em; }
-#steps { margin: 0; padding-left: 1.5em; }
-#steps li { margin-bottom: 0.45em; transition: color 0.4s, opacity 0.4s; }
-#steps li.done { opacity: 0.45; }
-#steps li.current { color: #fff; font-weight: 650; }
-#steps li.current::marker { color: #f6c35b; }
+#steps, #prep { margin: 0; padding-left: 1.5em; }
+#steps li, #prep li { margin-bottom: 0.45em; transition: color 0.4s, opacity 0.4s; }
+#steps li.done, #prep li.done { opacity: 0.45; }
+#steps li.current, #prep li.current { color: #fff; font-weight: 650; }
+#steps li.current::marker, #prep li.current::marker { color: #f6c35b; }
+#prep { list-style: lower-alpha; }
 
 #qr { bottom: 5vh; display: flex; align-items: center; gap: 1vw; padding: 1vw 1.4vw 1vw 1vw; font-size: 1.05vw; }
 #qr img { width: 9vw; height: 9vw; image-rendering: pixelated; border-radius: 0.4vw; background: #fff; }
@@ -32,3 +33,16 @@ body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #ff
 /* With the QR code up, the caption is centred in the room beside it, so the two never meet. */
 .side-right:not(.no-qr) #caption { left: 35vw; max-width: 60vw; }
 .side-left:not(.no-qr) #caption { left: 65vw; max-width: 60vw; }
+
+/* A step popped up (a spoken cue, or the operator): on the side away from the cook, where the recipe goes, which gives way to it. */
+#popup { top: 5vh; width: 30vw; padding: 1.4vw 1.8vw 1.5vw; border-left: 0.45vw solid #f6c35b; }
+.side-right #popup { right: 3vw; } .side-left #popup { left: 3vw; }
+#popup-label { margin: 0 0 0.3vw; font-size: 1.05vw; letter-spacing: 0.12em; text-transform: uppercase; color: #f6c35b; font-weight: 700; }
+#popup-caption { margin: 0 0 0.5vw; font-size: 2.1vw; line-height: 1.15; font-weight: 700; }
+#popup-text { margin: 0; font-size: 1.15vw; line-height: 1.35; color: #d7dde5; }
+/* An ingredient named: a lower third at the foot of the programme on the cook's side; a step's caption rises above it. */
+#lower { position: absolute; bottom: 7vh; max-width: 40vw; padding: 0.8vw 1.6vw 0.8vw 1.2vw; background: rgba(14, 18, 24, 0.86);
+  border-left: 0.45vw solid #7fc8a9; border-radius: 0.6vw; font-size: 1.7vw; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: opacity 0.45s ease; opacity: 1; }
+.side-right #lower { left: 3vw; } .side-left #lower { right: 3vw; }
+body.lower-up #caption { bottom: 17vh; }

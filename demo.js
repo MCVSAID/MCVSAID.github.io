@@ -60,6 +60,7 @@
     if (d.recording) d.recording.seconds = Math.round(t - S.recStart);
     if (d.streaming) d.streaming.seconds = Math.round(t - S.streamStart);
     d.next_cut_at = d.enabled ? S.nextCut : null;
+    if (S.answers['/api/recipe']) { recipeStart(); d.recipe = cooking() ? progress() : null; }
     monitor();
   }
   setInterval(tick, 1000);
@@ -137,6 +138,252 @@
     save(); return answer({ ...c, reply });
   }
 
+  // ---- Cooking's recipe (recipe.py, speech.py): its steps followed, edited and moved through here, and what the cook
+  // says simulated with the Recipe page's "Try a phrase". As the manager does it, in a smaller way: the shots each step
+  // has had are made up from its time (a station counts as shown after 15 s), and a pasted recipe is read by its headings.
+  const R = () => S.answers['/api/recipe'];
+  const cooking = () => S.answers['/api/event-mode']?.mode === 'cooking';
+  function recipeStart() {
+    // The recipe as recorded, its times brought forward so that the step being cooked began a minute ago.
+    const r = R(); if (!r || S.cook) return;
+    const p = r.progress || { steps: [] }, began = p.steps.filter(s => s.began != null).map(s => s.began), shift = began.length ? now() - 60 - Math.max(...began) : 0;
+    S.cook = { current: p.current_id || null, since: p.current_id ? now() - 60 : null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} };
+    for (const s of p.steps) { if (['done', 'skipped'].includes(s.status)) S.cook.status[s.id] = s.status; if (s.began != null) S.cook.began[s.id] = s.began + shift; if (s.seconds != null && s.status !== 'current') S.cook.ran[s.id] = s.seconds; }
+    const v = r.voice; if (v) { const last = Math.max(0, ...v.heard.map(e => e.at)); v.heard.forEach(e => { e.at += now() - 75 - last; }); }
+  }
+  function run() {
+    const r = R(); if (!r || !r.recipe) return [];
+    const out = [];
+    for (const [section, key, word] of [['prep', 'prep', 'Prep'], ['method', 'steps', 'Step']]) (r.recipe[key] || []).forEach((s, n) => out.push({ ...s, section, number: n + 1, label: `${word} ${n + 1}` }));
+    return out;
+  }
+  const at = id => run().findIndex(s => s.id === id);
+  function pendingFrom(start) { const steps = run(), c = S.cook; for (let n = Math.max(0, start); n < steps.length; n++) if (steps[n].id !== c.current && !c.status[steps[n].id]) return n; return null; }
+  const upcoming = () => pendingFrom(S.cook.current == null ? 0 : at(S.cook.current) + 1);
+  function remember(what, recipe) { const c = S.cook; c.undos.push({ what, state: copy({ current: c.current, status: c.status, began: c.began, ran: c.ran, since: c.since }), recipe: recipe ? copy(recipe) : null }); c.undos = c.undos.slice(-30); }
+  function begin(index, by, keep = true) {
+    const steps = run(), c = S.cook; if (!steps.length) return null;
+    index = Math.max(0, Math.min(index, steps.length - 1));
+    const target = steps[index], here = c.current == null ? null : at(c.current);
+    if (index === here) return target;
+    if (keep) remember(`${target.label} begun (${by})`);
+    if (c.current != null) { c.ran[c.current] = (c.ran[c.current] || 0) + (now() - c.since); if (here == null || index > here) c.status[c.current] = c.status[c.current] || 'done'; else delete c.status[c.current]; }
+    delete c.status[target.id]; c.current = target.id; c.since = now(); c.began[target.id] = c.began[target.id] || now();
+    return target;
+  }
+  function progress() {
+    const r = R(), c = S.cook, steps = run(); if (!r?.recipe) return null;
+    const t = now(), index = c.current == null ? -1 : at(c.current), next = upcoming();
+    const shown = id => { const ran = (c.ran[id] || 0) + (id === c.current ? t - c.since : 0); return ran; };
+    const listed = steps.map((s, n) => ({ id: s.id, label: s.label, section: s.section, number: s.number, caption: s.caption, text: s.text, stations: s.stations,
+      status: s.id === c.current && !c.status[s.id] ? 'current' : c.status[s.id] || 'to come', began: c.began[s.id] ?? null, seconds: c.began[s.id] != null ? Math.round(shown(s.id)) : null,
+      shots: c.began[s.id] != null && (c.status[s.id] === 'done' || shown(s.id) >= 15) ? s.stations : [], next: n === next }));
+    const step = index >= 0 ? steps[index] : null;
+    return { title: r.recipe.title, url: r.recipe.url, count: steps.length, current: index >= 0 ? index + 1 : null, current_id: c.current, step, next: next != null ? steps[next] : null,
+      seconds: step ? Math.round(t - c.since) : null, needs: step && t - c.since < 15 ? Object.fromEntries(step.stations.map(k => [k, 1])) : {}, follow: r.progress?.follow || 'auto',
+      covered: {}, missed: [], caption: null, history: [], steps: listed, prep: { count: steps.filter(s => s.section === 'prep').length, shown: r.overlay.prep !== false },
+      finished: listed.length > 0 && listed.every(s => ['done', 'skipped'].includes(s.status)), undo: c.undos.length ? c.undos[c.undos.length - 1].what : null };
+  }
+  function recipeRead() {
+    recipeStart();
+    const r = R(), v = r.voice;
+    v.listening = v.enabled && cooking(); v.problem = null; v.runtime = v.installed = true;
+    return { ...r, cooking: cooking(), progress: progress(), overlay: { ...r.overlay, page: null, showing: { on: !!r.recipe, side: 'right' } }, voice: { ...v, heard: v.heard.map(e => ({ ...e, ago: Math.round(now() - e.at) })) } };
+  }
+  const refused = (detail, status = 400) => answer({ detail }, status);
+  function stepPost(body) {
+    recipeStart();
+    const c = S.cook, steps = run(); if (!steps.length) return refused('No recipe is loaded', 409);
+    const known = Object.fromEntries(steps.map(s => [s.id, s]));
+    if ('go' in body) {
+      if (body.go === 'next') { const n = upcoming(); if (n != null) begin(n, 'operator'); else if (c.current && !c.status[c.current]) { remember(`${known[c.current].label} done (operator)`); c.status[c.current] = 'done'; } }
+      else if (body.go === 'back') begin(c.current == null ? 0 : at(c.current) - 1, 'operator');
+      else if (Number.isInteger(body.go) && body.go >= 1 && body.go <= steps.length) begin(body.go - 1, 'operator');
+      else return refused('go must be "next", "back" or a step number');
+    } else if ('mark' in body) {
+      const s = known[body.id]; if (!s || !['done', 'skipped', 'pending'].includes(body.mark)) return refused('mark a step of the recipe "done", "skipped" or "pending"');
+      remember(`${s.label} ${body.mark === 'pending' ? 'to come again' : body.mark} (operator)`);
+      if (body.id === c.current && body.mark !== 'pending') { const n = upcoming(); if (n != null) begin(n, 'operator', false); c.status[body.id] = body.mark; }
+      else if (body.mark === 'pending') delete c.status[body.id]; else c.status[body.id] = body.mark;
+    } else if (body.undo) {
+      const last = c.undos.pop(); if (!last) return refused('Nothing to undo', 409);
+      Object.assign(c, last.state); if (last.recipe) R().recipe = last.recipe;
+    } else if (body.skip_prep) {
+      const prep = steps.filter(s => s.section === 'prep'); if (!prep.length) return refused('The recipe has no preparation', 409);
+      remember('preparation skipped (operator)'); const onPrep = c.current && known[c.current].section === 'prep';
+      prep.forEach(s => { if (!c.status[s.id] && s.id !== c.current) c.status[s.id] = 'skipped'; });
+      if (onPrep) { const left = c.current, n = pendingFrom(prep.length); if (n != null) { begin(n, 'operator', false); c.status[left] = 'skipped'; } }
+    } else if ('pop' in body) { if (!known[body.pop]) return refused('pop up a step of the recipe'); popUp(known[body.pop]); }
+    else if ('id' in body) { if (!known[body.id]) return refused('that step is no longer in the recipe'); begin(at(body.id), 'operator'); }
+    save(); return answer(recipeRead());
+  }
+  const shortCaption = text => { const t = text.replace(/\.$/, '').split(/[,;.]/)[0].trim(); return t.length <= 60 ? t : `${t.slice(0, 59).replace(/\s+\S*$/, '')}…`; };
+  function freshId(prefix, taken) { for (let n = 1; ; n++) if (!taken.has(`${prefix}${n}`)) return `${prefix}${n}`; }
+  function editPost(body) {
+    const r = R(); if (!r.recipe) return refused('No recipe is loaded', 409);
+    const before = copy(r.recipe), recipe = copy(r.recipe), parts = { prep: recipe.prep = recipe.prep || [], method: recipe.steps };
+    const find = id => { for (const [name, list] of Object.entries(parts)) { const n = list.findIndex(s => s.id === id); if (n >= 0) return [name, n]; } return null; };
+    const fill = (s, given) => {
+      if ('text' in given) { const text = String(given.text || '').trim().slice(0, 400); if (!text) throw new Error('a step needs some words'); if (text !== s.text) { s.text = text; if (!('caption' in given)) s.caption = shortCaption(text); if (!('stations' in given)) s.stations = s.stations || []; } }
+      if ('caption' in given) s.caption = String(given.caption || '').trim().slice(0, 60) || shortCaption(s.text);
+      if (Array.isArray(given.stations)) s.stations = given.stations.filter(k => r.stations.some(([key]) => key === k)).slice(0, 2);
+      return s;
+    };
+    try {
+      if (body.action === 'update') { const f = find(body.id); if (!f) throw new Error('that step is no longer in the recipe'); fill(parts[f[0]][f[1]], body); }
+      else if (body.action === 'add') {
+        const list = parts[body.section || 'method']; if (!list) throw new Error('a step is in the preparation ("prep") or the method ("method")');
+        const taken = new Set([...parts.prep, ...parts.method].map(s => s.id));
+        const s = fill({ id: freshId(body.section === 'prep' ? 'p' : 's', taken), stations: [] }, body); if (!s.caption) s.caption = shortCaption(s.text);
+        list.splice(Number.isInteger(body.at) ? Math.max(0, Math.min(body.at, list.length)) : list.length, 0, s);
+      } else if (body.action === 'delete') { const f = find(body.id); if (!f) throw new Error('that step is no longer in the recipe'); parts[f[0]].splice(f[1], 1); }
+      else if (body.action === 'move') {
+        const f = find(body.id); if (!f || !Number.isInteger(body.to)) throw new Error('say where the step goes');
+        const [s] = parts[f[0]].splice(f[1], 1), target = parts[body.section || f[0]]; target.splice(Math.max(0, Math.min(body.to, target.length)), 0, s);
+      } else if (body.action === 'details') {
+        if ('title' in body) recipe.title = String(body.title || '').trim() || recipe.title;
+        if ('url' in body) recipe.url = String(body.url || '').trim();
+        if ('ingredients' in body) recipe.ingredients = (Array.isArray(body.ingredients) ? body.ingredients : String(body.ingredients).split('\n')).map(l => l.trim().replace(/^[-*•]\s*/, '')).filter(Boolean);
+      } else throw new Error('the change is "update", "add", "delete", "move" or "details"');
+      if (!parts.method.length) throw new Error('the method needs at least one step: add another before deleting this one');
+    } catch (error) { return refused(error.message); }
+    remember({ update: 'step edited', add: 'step added', delete: 'step deleted', move: 'step moved', details: 'recipe details changed' }[body.action], before);
+    r.recipe = recipe;
+    const ids = new Set(run().map(s => s.id)), c = S.cook;
+    for (const table of [c.status, c.began, c.ran]) for (const id of Object.keys(table)) if (!ids.has(id)) delete table[id];
+    if (c.current && !ids.has(c.current)) { c.current = null; const n = pendingFrom(0); if (n != null) begin(n, 'operator', false); }
+    save(); return answer(recipeRead());
+  }
+  function loadPost(body) {
+    const r = R();
+    if (body.clear) { r.recipe = null; S.cook = { current: null, since: null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} }; r.voice.heard = []; save(); return answer(recipeRead()); }
+    if (typeof body.text !== 'string' || !body.text.trim()) { note('In the demo a recipe is not read from the web: paste one instead.'); return refused('In this demo nothing is fetched from the web: paste the recipe as text instead'); }
+    // Read as recipe.from_text does, by its headings: a title, the ingredients, any preparation, the method.
+    const HEAD = { ingredients: 'ingredients', ingredient: 'ingredients', method: 'steps', directions: 'steps', instructions: 'steps', steps: 'steps', preparation: 'prep', prep: 'prep', 'before you start': 'prep', 'mise en place': 'prep', 'before you begin': 'prep' };
+    const found = { ingredients: [], prep: [], steps: [], none: [] }; let title = '', part = null;
+    for (const raw of body.text.split('\n')) {
+      const line = raw.trim(); if (!line) continue;
+      const head = HEAD[line.toLowerCase().replace(/:$/, '').trim()]; if (head) { part = head; continue; }
+      if (!title && !part && !/^(\d+[.)]|[-*•])\s/.test(line)) { title = line; continue; }
+      found[part || 'none'].push(line.replace(/^(step\s*\d+\s*[.):-]?|\d+\s*[.):-]|[-*•])\s*/i, ''));
+    }
+    if (!found.steps.length) { found.steps = found.none.length ? found.none : found.prep; if (!found.none.length) found.prep = []; }
+    if (!found.steps.length) return refused('a recipe needs at least one step');
+    const step = (text, id) => ({ id, text, caption: shortCaption(text), stations: [] });
+    r.recipe = { title: title || 'Recipe', url: String(body.url || '').trim(), ingredients: found.ingredients, prep: found.prep.map((t, n) => step(t, `p${n + 1}`)), steps: found.steps.map((t, n) => step(t, `s${n + 1}`)) };
+    S.cook = { current: null, since: null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} };
+    save(); return answer(recipeRead());
+  }
+  function overlayPost(body) {
+    const r = R(), o = r.overlay;
+    for (const k of ['recipe', 'qr', 'captions', 'obs']) if (typeof body[k] === 'boolean') o[k] = body[k];
+    if (typeof body.prep === 'boolean') o.prep = body.prep;
+    if (body.follow && r.progress) r.progress.follow = body.follow;
+    if (body.obs) { o.scenes = 7; o.problem = null; note('In the demo there is no OBS: the overlay is shown on the programme monitor.'); }
+    save(); return answer(recipeRead());
+  }
+
+  // What the cook says (speech.py's match, the same phrases and the same refusals, a little simplified).
+  const NUM = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+    first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12 };
+  const normal = text => String(text).toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9'\s-]/g, ' ').replace(/-/g, ' ').split(/\s+/).filter(Boolean)
+    .map(w => (w in NUM ? String(NUM[w]) : /^\d+(st|nd|rd|th)$/.test(w) ? w.replace(/\D/g, '') : w)).join(' ');
+  const singular = w => (w.length <= 3 || /(ss|us|is)$/.test(w) ? w : /ies$/.test(w) ? `${w.slice(0, -3)}y` : /(oes|ches|shes|xes)$/.test(w) ? w.slice(0, -2) : w.endsWith('s') ? w.slice(0, -1) : w);
+  const UNITS = new Set('cup cups tbsp tsp tablespoon tablespoons teaspoon teaspoons g gram grams kg ml l litre litres oz ounce ounces lb lbs pound pounds pinch dash clove cloves can cans tin tins jar jars package packet stick sticks handful bunch sprig sprigs slice slices piece pieces of a an large medium small whole some few little plus optional or to'.split(' '));
+  const PREPARED = new Set('chopped diced minced sliced grated softened melted beaten sifted peeled crushed finely roughly thinly freshly fresh cubed halved trimmed crumbled ground packed ripe divided'.split(' '));
+  const names = line => String(line).toLowerCase().replace(/\([^)]*\)/g, ' ').split(/,|;|\bto (?:taste|serve)\b|\bfor (?:the )?(?:garnish|serving)\b/)[0].split(/\band\b|\bor\b|\//)
+    .map(part => normal(part).split(' ').filter(w => !/^[\d.½¼¾⅓⅔]+$/.test(w) && !UNITS.has(w) && !PREPARED.has(w) && w.length > 1).map(singular).slice(-4)).filter(n => n.length);
+  const NEG = /\b(not|don't|dont|didn't|won't|never|isn't|aren't|wasn't|no|can't)\b/;
+  const negated = (text, start) => NEG.test(text.slice(0, start).split(' ').slice(-4).join(' '));
+  const LED = "(?:on|onto|to|at|for|into|now|start|starting|begin|beginning|it's|its|this is|here's|that's|we're|were|time for)";
+  const STEPS = [[new RegExp(`\\b${LED}\\s+(?:the\\s+|our\\s+)?(?:(prep|preparation)\\s+)?step\\s+(?:number\\s+)?(\\d{1,2})\\b`), 1], [new RegExp(`\\b${LED}\\s+(?:the|our)\\s+(\\d{1,2})\\s+(?:(prep|preparation)\\s+)?step\\b`), 1, true],
+    [/\b(?:(prep|preparation)\s+)?step\s+(?:number\s+)?(\d{1,2})\s+(?:now|next)\b/, 1], [/^(?:\S+\s+){0,2}?(?:(prep|preparation)\s+)?step\s+(?:number\s+)?(\d{1,2})\b(?!\s+(?:is|was|will|would|can|could|should|where|when|that|of|in)\b)/, 0.85]];
+  const ELSEWHERE = /\b(?:in|after|before|from|since|during|like|skip|skipping|until|till)\s+(?:the\s+)?(?:(?:prep|preparation)\s+)?step\s+(?:number\s+)?\d/;
+  const NEXT = /\b(?:on|onto|to|for)\s+(?:the|our)\s+next\s+step\b|^(?:\S+\s+){0,2}?(?:the\s+)?next\s+step\b|\bnext\s+step\s*(?:now|then|please)?$|\b(?:moving|move|let's move|lets move|we'll move|carry|carrying|time to move)\s+on\b(?!\s+to\b)/;
+  const MOVING = /\b(?:moving|move|let's move|lets move|we'll move|carry|carrying|going|let's go)\s+on\s+to\s+(?:the\s+|our\s+)?(.+)$/;
+  const RECIPE = /\b(?:see|show|look at|have a look at|take a look at|pull up|put up|bring up|check out|pop up)\s+(?:you\s+|us\s+|me\s+|everyone\s+|you guys\s+)?(?:the|that|this|our|my|a)\s+(?:full\s+|whole\s+)?recipe\b(?!\s+(?:calls|says|uses|needs|asks|wants|has|is|was|said|will|book|card)\b)|\bhere's\s+(?:the|that|our|my)\s+(?:full\s+)?recipe\b|\brecipe\s+(?:on|up on)\s+(?:the\s+)?screen\b/;
+  const STOP = new Set('the a an to on onto and then our my some of in into with for it its this that now we let\'s go next bit part so okay ok right is are'.split(' '));
+  function cues(text) {
+    const steps = run(), found = [], elsewhere = ELSEWHERE.test(text);
+    for (const [pattern, score, swapped] of STEPS) {
+      const m = text.match(pattern); if (!m || negated(text, m.index) || (elsewhere && score === 1)) continue;
+      const prep = swapped ? m[2] : m[1], n = Number(swapped ? m[1] : m[2]), section = prep ? 'prep' : 'method';
+      const target = steps.find(s => s.section === section && s.number === n);
+      found.push({ kind: 'step', score, id: target?.id || null, label: target?.label || `${prep ? 'Prep' : 'Step'} ${n}` }); break;
+    }
+    if (!found.length) {
+      const m = text.match(NEXT);
+      if (m && !negated(text, m.index) && !/\b(?:in|after|before|until|during)\s+(?:the|our)\s+next\s+step\b/.test(text)) found.push({ kind: 'next', score: 1 });
+      else {
+        const moving = text.match(MOVING);
+        if (moving && !negated(text, moving.index)) {
+          const wanted = moving[1].split(' ').filter(w => !STOP.has(w)).map(singular).slice(0, 6), here = S.cook.current == null ? -1 : at(S.cook.current);
+          let best = 0, second = 0, chosen = null;
+          steps.forEach((s, n) => { if (n <= here || !wanted.length) return; const have = new Set(normal(`${s.caption} ${s.text}`).split(' ').map(singular)); const share = wanted.filter(w => have.has(w)).length / wanted.length;
+            if (share > best) { second = best; best = share; chosen = s; } else if (share > second) second = share; });
+          if (chosen && best >= 0.5 && best > second) found.push({ kind: 'step', score: 0.6 + 0.4 * best, id: chosen.id, label: chosen.label });
+        }
+      }
+    }
+    const r = text.match(RECIPE); if (r && !negated(text, r.index)) found.push({ kind: 'recipe', score: 1 });
+    const words = text.split(' ').map(singular), heard = new Set(words), lines = R().recipe?.ingredients || [], seen = [];
+    lines.forEach((line, index) => {
+      let best = null, where = 0;
+      for (const name of names(line)) { const head = name[name.length - 1]; if (!heard.has(head)) continue; const told = name.slice(0, -1).filter(w => heard.has(w)).length;
+        if (!best || told > best[0]) best = [told, name.length > 1 ? told / (name.length - 1) : 1]; where = words.indexOf(head); }
+      if (best) seen.push({ index, best, where, heads: new Set(names(line).map(n => n[n.length - 1])) });
+    });
+    for (const one of seen) {
+      const rivals = seen.filter(o => o.index !== one.index && [...o.heads].some(h => one.heads.has(h))).map(o => o.best[0]);
+      if (rivals.length && one.best[0] <= Math.max(...rivals)) continue;
+      found.push({ kind: 'ingredient', score: 0.85 + 0.15 * one.best[1], line: lines[one.index], index: one.index, where: one.where });
+    }
+    return found.sort((a, b) => (a.kind === 'ingredient' && b.kind === 'ingredient' ? a.where - b.where : 0));
+  }
+  function popUp(s) { S.cook.flash.popup = { label: s.label, of: run().filter(x => x.section === s.section).length, caption: s.caption, until: now() + 8 }; }
+  function voicePost(body) {
+    recipeStart();
+    const r = R(), v = r.voice;
+    if (!('say' in body)) {
+      if (typeof body.enabled === 'boolean') v.enabled = body.enabled;
+      for (const [k, on] of Object.entries(body.cues || {})) if (k in v.cues) v.cues[k] = !!on;
+      if (typeof body.device === 'string') { v.device = body.device.trim(); v.source = v.device || 'BlackHole 2ch'; }
+      if (body.model) v.model = body.model;
+      save(); return answer(recipeRead());
+    }
+    if (!r.recipe) return refused('No recipe is loaded', 409);
+    const t = now(), entry = { at: t, text: String(body.say).slice(0, 240), sure: 1, typed: true, did: null, why: null }, reasons = [];
+    S.lastCue = S.lastCue || {};
+    const rest = { recipe: 20, step: 4, next: 8, ingredient: 5 };
+    for (const cue of cues(normal(body.say))) {
+      const kind = cue.kind === 'next' ? 'step' : cue.kind;
+      if (!v.cues[kind]) { reasons.push(`${kind} cues are off`); continue; }
+      if (cue.score < v.min_confidence) { reasons.push(`not sure enough (${cue.score.toFixed(2)} of ${v.min_confidence.toFixed(2)} needed)`); continue; }
+      const key = cue.kind === 'ingredient' ? `ingredient:${cue.index}` : cue.kind;
+      if (t - (S.lastCue[key] || -1e9) < (cue.kind === 'ingredient' ? 45 : rest[cue.kind])) { reasons.push('said again too soon'); continue; }
+      if (cue.kind === 'recipe') { S.cook.flash.recipe = { until: t + 30 }; entry.did = `showed the recipe${r.recipe.url ? ' and its QR code' : ''} for 30 s`; }
+      else if (cue.kind === 'step' || cue.kind === 'next') {
+        if (cue.kind === 'step' && !cue.id) { reasons.push(`heard ${cue.label}, but the recipe has no ${cue.label}`); continue; }
+        if (cue.kind === 'step' && cue.id === S.cook.current) { reasons.push(`already on ${cue.label}`); continue; }
+        const n = cue.kind === 'next' ? upcoming() : at(cue.id); if (n == null) { reasons.push('heard “next step”, but there is no step after this one'); continue; }
+        const s = begin(n, 'voice'); popUp(s); entry.did = `moved to ${s.label} and showed it on screen`;
+      } else { S.cook.flash.lower = { text: cue.line, until: t + 6 }; entry.did = `showed “${cue.line}” at the foot of the screen`; }
+      S.lastCue[key] = t; break;
+    }
+    if (!entry.did) entry.why = [...new Set(reasons)].join('; ') || 'no cue in it';
+    v.heard.unshift(entry); v.heard = v.heard.slice(0, 10);
+    save(); return answer({ ...recipeRead(), said: entry });
+  }
+  // On the programme monitor, what the overlay would lay over the programme now.
+  function overlayNow() {
+    const c = S.cook, r = R(); if (!c || !r?.recipe || !cooking()) return [];
+    const t = now(), shown = [], f = c.flash || {};
+    if (f.popup && f.popup.until > t) shown.push(['popup', `${f.popup.label} of ${f.popup.of}`, f.popup.caption]);
+    else if (r.overlay.recipe || (f.recipe && f.recipe.until > t)) shown.push(['card', r.recipe.title, c.current ? run()[at(c.current)]?.label || '' : '']);
+    if (f.lower && f.lower.until > t) shown.push(['lower', f.lower.text, '']);
+    return shown;
+  }
+
   // ---- answers -----------------------------------------------------------------------------------------
   const answer = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   function read(path, query) {
@@ -148,6 +395,7 @@
       const key = Object.keys(a).find(k => k.startsWith('/api/temperatures?')); return key ? a[key] : { cameras: [] };
     }
     if (path === '/api/scene-chat' && a[path]) { chatActive(); return a[path]; }
+    if (path === '/api/recipe' && a[path]) return recipeRead();
     if (path in a) return a[path];
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
@@ -301,6 +549,10 @@
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);
+    if (S.answers['/api/recipe']) {
+      const recipeAnswer = { '/api/recipe': loadPost, '/api/recipe/step': stepPost, '/api/recipe/edit': editPost, '/api/recipe/voice': voicePost, '/api/overlay': overlayPost }[path];
+      if (recipeAnswer) return recipeAnswer(body);
+    }
     return merge(path, body);
   };
 
@@ -318,6 +570,9 @@
       pics.dataset.ids = want; pics.replaceChildren(...ids.map(id => { const i = document.createElement('img'); i.src = `/api/colour/preview/${id}`; i.alt = named(id) || ''; return i; }));
     }
     box.querySelector('.what').textContent = ids.length ? (d.pair ? `Split: ${ids.map(named).join(' + ')}` : named(ids[0])) : 'nothing on air';
+    // What the overlay lays over the programme in Cooking: a step popped up, the recipe, an ingredient named.
+    const layer = box.querySelector('.ovl'), over = overlayNow(), key = JSON.stringify(over);
+    if (layer.dataset.key !== key) { layer.dataset.key = key; layer.replaceChildren(...over.map(([kind, top, line]) => { const el = document.createElement('div'); el.className = `o-${kind}`; const b = document.createElement('b'); b.textContent = top; el.append(b); if (line) { const s = document.createElement('span'); s.textContent = line; el.append(s); } return el; })); }
     box.querySelector('.rec').hidden = !d.recording; box.querySelector('.live').hidden = !d.streaming;
   }
   const css = `
@@ -327,7 +582,12 @@
     #demo-monitor .pics{display:flex;aspect-ratio:16/9;background:#000} #demo-monitor .pics img{flex:1;min-width:0;object-fit:cover}
     #demo-monitor .row{display:flex;gap:6px;align-items:center;padding:5px 8px} #demo-monitor .what{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     #demo-monitor .tag{background:#1d3a50;color:#fff;border-radius:4px;padding:1px 5px;font-weight:600} #demo-monitor .rec{background:#a3261c} #demo-monitor .live{background:#a3261c}
-    #demo-monitor.small .pics{display:none}
+    #demo-monitor{position:fixed} #demo-monitor .ovl{position:absolute;inset:0 0 auto 0;aspect-ratio:16/9;pointer-events:none;font:9px/1.25 system-ui,sans-serif}
+    #demo-monitor .ovl div{position:absolute;background:rgba(14,18,24,.86);color:#fff;border-radius:3px;padding:3px 5px;max-width:55%;overflow:hidden}
+    #demo-monitor .ovl b,#demo-monitor .ovl span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #demo-monitor .o-popup,#demo-monitor .o-card{top:6px;right:6px;border-left:2px solid #f6c35b} #demo-monitor .o-popup b,#demo-monitor .o-card b{color:#f6c35b}
+    #demo-monitor .o-lower{bottom:8px;left:6px;border-left:2px solid #7fc8a9}
+    #demo-monitor.small .pics,#demo-monitor.small .ovl{display:none}
     #demo-note{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:9999;background:#1e2c39;color:#eef4f8;border:1px solid #547087;border-radius:8px;padding:6px 12px;font:13px system-ui,sans-serif}
     @media (max-width:700px){#demo-monitor{width:132px;top:auto;bottom:108px;right:8px}#demo-bar{right:8px;left:8px;bottom:70px;font-size:12px;white-space:normal;border-radius:12px}}`;
   function decorate() {
@@ -336,7 +596,7 @@
     bar.innerHTML = '<b>Demo</b> · simulated cameras, nothing connected · <a href="https://github.com/MCVSAID/mcvsaid-app">About</a> · <a href="mailto:mcvsaid@proton.me?subject=MCVSAID%20beta">Join the beta</a><button type="button" id="demo-reset" title="Put everything back as it was">Start over</button><button type="button" id="demo-hide" aria-label="Hide this note">×</button>';
     bar.title = 'The real MCVSAID dashboard, running in your browser with simulated cameras. Nothing is connected and nothing you press leaves your browser; the pictures are drawn stills, not video.';
     const mon = document.createElement('div'); mon.id = 'demo-monitor'; mon.setAttribute('aria-label', 'Programme monitor (simulated)');
-    mon.innerHTML = '<div class="pics"></div><div class="row"><span class="tag">PGM</span><span class="what"></span><span class="tag rec" hidden>REC</span><span class="tag live" hidden>LIVE</span></div>';
+    mon.innerHTML = '<div class="pics"></div><div class="ovl" aria-live="polite"></div><div class="row"><span class="tag">PGM</span><span class="what"></span><span class="tag rec" hidden>REC</span><span class="tag live" hidden>LIVE</span></div>';
     mon.title = 'What the programme shows: a still drawn by the demo for the camera on air'; mon.onclick = () => mon.classList.toggle('small'); if (innerWidth < 700) mon.classList.add('small');
     const toast = document.createElement('div'); toast.id = 'demo-note'; toast.hidden = true; toast.setAttribute('aria-live', 'polite');
     document.body.append(bar, mon, toast);

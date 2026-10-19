@@ -28,7 +28,8 @@ async function api(path, options = {}) {
 }
 // Which part of the main page is showing, and which sections belong to it.
 const PARTS = {
-  '/': ['#ready', '#recording-alerts', '#program', '#recipe', '#fleet', '#heat-plan'],
+  '/': ['#ready', '#recording-alerts', '#program', '#recipe-now', '#fleet', '#heat-plan'],
+  '/recipe': ['#recipe'],
   '/cameras': ['#studio', '#bands', '#cameras'],
   '/colour': ['#colour'],
   '/director': ['#ai-setup', '#director-settings', '#face-blur', '#obs-sync'],
@@ -51,6 +52,8 @@ function show(path) {
   if (path === '/locations') { path = '/system'; systemTab = 'locations'; }
   else if (path === '/system') systemTab = systemTabOf(location.hash.slice(1));
   part = PARTS[path] ? path : '/';
+  // The Recipe page is Cooking's: in another kind of event it is the Show page.
+  if (part === '/recipe' && window.concert.mode && window.concert.mode.mode !== 'cooking') { part = '/'; history.replaceState(null, '', '/'); }
   if (ADMIN_ONLY.includes(part) && role !== 'admin') { part = '/'; history.replaceState(null, '', '/'); }
   for (const [name, sections] of Object.entries(PARTS)) for (const id of sections) { const section = document.querySelector(id); if (section) section.hidden = name !== part; }
   if (part === '/system') {
@@ -470,7 +473,7 @@ document.addEventListener('change', event => { if (event.target.matches?.('selec
 const words = () => window.concert.mode?.words || { profile: 'band', role: 'instrument', roles: 'instruments', anyone: 'anyone performing', crowd: 'crowd', example: 'banjo, harmonica, pedal steel', performer: 'performer' };
 const capital = text => text.charAt(0).toUpperCase() + text.slice(1);
 // A new kind of event changes what each camera can be given: shown at once.
-document.addEventListener('event-mode', () => { if (csrf) refresh(); });
+document.addEventListener('event-mode', () => { if (csrf) { if (part === '/recipe' && window.concert.mode?.mode !== 'cooking') show('/'); else refresh(); } });
 // S marks the next recipe step while the programme records (the button is there only then), unless typing somewhere.
 document.addEventListener('keydown', event => {
   if (event.key.toLowerCase() !== 's' || event.metaKey || event.ctrlKey || event.altKey || event.repeat || event.target.closest?.('input, textarea, select, [contenteditable], dialog')) return;

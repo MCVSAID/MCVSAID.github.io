@@ -5,6 +5,7 @@ window.concert = {
   // Where things are, by what they are for: what is watched while live, what is set up for a show, the recordings (the
   // files and how they are made), and the administration. Each is [path, name, what it is for, who may see it, group, icon].
   pages: [['/', 'Show', 'Readiness, what is on air, recording the programme', null, 'Show', 'show'],
+          ['/recipe', 'Recipe', 'The recipe being cooked: its preparation and steps, what is on screen, spoken cues', null, 'Show', 'recipe'],
           ['/cameras', 'Cameras', 'Each phone: its state, its controls, what it shows', null, 'Show', 'camera'],
           ['/stage', 'Stage Shots', 'Choose shots from a picture of the stage', null, 'Show', 'stage'],
           ['/temperatures', 'Temperatures', 'Heat now and run by run', null, 'Show', 'heat'],
@@ -15,9 +16,12 @@ window.concert = {
           ['/system', 'System', 'Cameras and devices, network, logins, locations, this PC', 'admin', 'Administration', 'system']],
   // On a phone, these are along the bottom; the rest are under More.
   handy: ['/', '/cameras', '/stage', '/director'],
+  handyIn: { cooking: ['/', '/recipe', '/cameras', '/stage'] },     // in Cooking, the recipe is followed during the show
   // Pages that sit under one of the above, which is shown as the current one while they are open.
   under: { '/recordings': '/offload', '/phones': '/system', '/locations': '/system' },
-  inPlace: ['/', '/cameras', '/colour', '/director', '/recordings', '/system', '/locations'],   // parts of the one main page: switched without loading anything
+  // Pages only for one kind of event (modes.py): shown in the side bar only while it is the one in use.
+  onlyIn: { '/recipe': 'cooking' },
+  inPlace: ['/', '/recipe', '/cameras', '/colour', '/director', '/recordings', '/system', '/locations'],   // parts of the one main page: switched without loading anything
   // The tabs within Recordings, the same on its two pages, and System's sections: under their page in the side bar.
   recordingTabs: [['/offload', 'Local recordings (phones)'], ['/recordings', 'PC recordings']],
   systemTabs: [['/system#devices', 'Cameras & devices'], ['/system#network', 'Network'], ['/system#logins', 'Logins'], ['/system#locations', 'Locations & backups'], ['/system#pc', 'This PC']],
@@ -90,7 +94,8 @@ window.concert = {
     }
     bar.replaceChildren();
     const here = location.pathname.replace(/\/+$/, '') || '/', current = this.under[here] || here;
-    const visible = this.pages.filter(([, , , who]) => who !== 'admin' || role === 'admin');
+    const handy = this.handyIn[this.mode?.mode] || this.handy;
+    const visible = this.pages.filter(([path, , , who]) => (who !== 'admin' || role === 'admin') && (!this.onlyIn[path] || this.onlyIn[path] === this.mode?.mode));
     const go = (link, path) => {
       if (!(pick && this.inPlace.includes(path.split('#')[0]))) return;
       link.onclick = event => { if (event.metaKey || event.ctrlKey || event.shiftKey) return; event.preventDefault(); this.menu(false); history.pushState(null, '', path); pick(path.split('#')[0]); this.nav(role, pick); };
@@ -137,14 +142,14 @@ window.concert = {
     let bottom = document.querySelector('#bottom-bar');
     if (!bottom) { bottom = document.createElement('nav'); bottom.id = 'bottom-bar'; bottom.setAttribute('aria-label', 'Pages used during a show'); document.body.append(bottom); }
     bottom.replaceChildren();
-    for (const [path, title, , , , icon] of visible.filter(([path]) => this.handy.includes(path))) {
+    for (const [path, title, , , , icon] of visible.filter(([path]) => handy.includes(path))) {
       const link = document.createElement('a'); link.href = path; link.dataset.page = path; link.innerHTML = `${this.icon(icon)}<span class="label"></span><span class="badge" hidden></span>`; link.querySelector('.label').textContent = title;
       if (path === current) link.setAttribute('aria-current', 'page');
       go(link, path); bottom.append(link);
     }
     const more = document.createElement('button'); more.type = 'button'; more.id = 'menu-button'; more.setAttribute('aria-controls', 'pages');
     more.innerHTML = `${this.icon('menu')}<span class="label">More</span>`; more.setAttribute('aria-expanded', String(document.body.classList.contains('menu-open')));
-    if (!this.handy.includes(current)) more.setAttribute('aria-current', 'page');
+    if (!handy.includes(current)) more.setAttribute('aria-current', 'page');
     more.onclick = () => this.menu(!document.body.classList.contains('menu-open'));
     bottom.append(more);
     // Where the side bar is a strip or hidden, the show's state rides along the top of the page instead.
@@ -164,7 +169,10 @@ window.concert = {
     const changed = this.mode?.mode !== report.mode;
     if (!changed && JSON.stringify(report) === JSON.stringify(this.mode)) return;      // not redrawn, so a list being chosen from stays open
     this.mode = report; this.drawMode();
-    if (changed) document.dispatchEvent(new CustomEvent('event-mode', { detail: report }));
+    if (changed) {
+      if (this.role && document.querySelector('#pages')) this.nav(this.role, this.pick);     // a page for this kind of event shown, or put away
+      document.dispatchEvent(new CustomEvent('event-mode', { detail: report }));
+    }
   },
   /** Under the name in the side bar: a list to choose from for the administrator, the mode's name for an operator. In
    * the narrow rail a small button with the mode's short name, which widens the bar to show the rest. */
@@ -254,6 +262,7 @@ window.concert = {
     const badges = {
       '/': state && ready.state !== 'ok' ? ['', state[1], state[0]] : null,
       '/cameras': cameras.length ? [`${online}/${cameras.length}`, online < cameras.length ? 'warn' : 'ok', `${online} of ${cameras.length} cameras online`] : null,
+      '/recipe': director.recipe?.current ? [`${director.recipe.current}/${director.recipe.count}`, 'ok', `${director.recipe.step?.label || 'Step'} of ${director.recipe.title}`] : null,
       '/director': director.problem ? ['', 'fail', `Programme control is not working: ${director.problem}`] : null,
       '/offload': director.recording ? ['REC', 'rec', 'The programme is being recorded'] : null,
       '/temperatures': hot.length ? ['', hot.some(c => c.thermal.level === 'critical') ? 'fail' : 'warn', `Hot: ${hot.map(c => c.name).join(', ')}`] : null,
@@ -270,6 +279,7 @@ window.concert = {
   icon(name) {
     const paths = {
       logo: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/><circle cx="9" cy="12" r="2.5"/>',
+      recipe: '<path d="M6 3h10l3 3v15H6z"/><path d="M16 3v3h3"/><path d="M9 10h7M9 14h7M9 18h4"/>',
       show: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M10 8.5v5l4-2.5z" fill="currentColor"/>',
       camera: '<path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="4"/>',
       stage: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>',
