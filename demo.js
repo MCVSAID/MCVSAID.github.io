@@ -418,6 +418,28 @@
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
   }
+  function accessoryPost(id, body) {
+    // Move here: the cooler or gimbal goes from one simulated camera's report to the other's, as the phones would say.
+    const all = cams().cameras, to = all.find(c => c.id === id), from = all.find(c => c.id === body.from), kind = body.kind;
+    if (!to || !from || !['cooler', 'gimbal'].includes(kind) || !from[kind]?.address) return answer({ detail: 'Nothing to move' }, 409);
+    for (const key of ['telemetry', null]) {
+      const a = key ? from.telemetry : from, b = key ? to.telemetry : to;
+      if (!a || !b) continue;
+      b[kind] = JSON.parse(JSON.stringify(a[kind]));
+      a[kind] = kind === 'gimbal' && key ? { ...a[kind], address: null, name: '', state: 'none', connected: false } : null;
+    }
+    save(); note(`In the demo the ${kind} moves at once; a real one connects to its new phone within a few seconds.`);
+    return answer({ request_id: 'demo', state: 'SUCCEEDED', result: { type: 'ack', ok: true, demo: true } });
+  }
+  function renamePost(id, body) {
+    // As the manager does: 1 to 80 characters, no two cameras alike. Other pages keep the recorded name until Start over.
+    const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
+    const name = String(body.name || '').split(/\s+/).filter(Boolean).join(' ');
+    if (name.length < 1 || name.length > 80) return answer({ detail: 'Give the camera a name of 1 to 80 characters' }, 400);
+    if (cams().cameras.some(c => c.id !== id && c.name.toLowerCase() === name.toLowerCase())) return answer({ detail: `There is already a camera called ${name}` }, 409);
+    const was = camera.name; camera.name = name; save();
+    return answer({ camera_id: id, name, was });
+  }
   let gimbalNoted = false;
   function command(id, body) {
     const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
@@ -436,7 +458,7 @@
         if (p.fan) { c.fan = p.fan; c.fan_mode = p.fan === 'overclock_streaming' ? 'smart' : p.fan; c.fan_speed = p.fan === 'manual' ? (p.level || c.fan_level || 3) : null; }
         if (p.level) { c.fan_level = p.level; if (c.fan === 'manual') c.fan_speed = p.level; }
         if ('shutdown' in p) c.shutdown = p.shutdown || null;
-        if (p.look) note('In the demo the cooler is already found.');
+        if (p.look) note('In the demo no other cooler is near: Move here takes one from another camera.');
         // Its fan speed as measured on a real one in each mode, and the line the card shows, as the manager writes it.
         const level = c.fan_level || 3;
         c.fan_rpm = { silent: 3050, smart: 3560, overclock: 5800, overclock_streaming: 5800, manual: 3930 + (level - 1) * 470 }[c.fan] || c.fan_rpm;
@@ -458,7 +480,7 @@
         if ('summary' in g) g.summary = g.moving ? 'Gimbal: connected, moving' : 'Gimbal: connected';
       }
       if (what === 'gimbal.move' && !gimbalNoted) { gimbalNoted = true; note('In the demo the gimbal says it turns, but the pictures are drawn, so nothing moves.'); }
-      if (p.look) note('In the demo the gimbal is already found.');
+      if (p.look) note('In the demo no other gimbal is near: Move here takes one from another camera.');
     }
     tick(); save();
     return answer({ id: body.request_id || 'demo', camera_id: id, state: 'SUCCEEDED', result: { type: 'ack', ok: true, demo: true }, created: now() });
@@ -582,6 +604,8 @@
     if (path === '/api/event-mode') return kindPost(body);
     if (path === '/api/scene-chat') return chatPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
+    const moved = path.match(/^\/api\/cameras\/([^/]+)\/accessory$/); if (moved) return accessoryPost(decodeURIComponent(moved[1]), body);
+    const named = path.match(/^\/api\/cameras\/([^/]+)\/name$/); if (named) return renamePost(decodeURIComponent(named[1]), body);
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);
     if (S.answers['/api/recipe']) {

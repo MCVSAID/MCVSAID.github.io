@@ -321,6 +321,39 @@ function asideButton(camera) {
   };
   return button;
 }
+/** Coolers or gimbals other cameras have, each with Move here: that phone lets it go, and this one takes it. */
+function moveHere(camera, kind, paired) {
+  const word = kind === 'cooler' ? 'cooler' : 'gimbal';
+  const others = paired.filter(other => other.id !== camera.id && other[kind]?.address);
+  if (!others.length) return null;
+  const list = node('ul', '');
+  for (const other of others) {
+    const item = node('li', `${other[kind].name || word} on ${other.name}${other[kind].connected ? '' : ' (not connected there)'} `);
+    const move = node('button', 'Move here'); move.disabled = !camera.online || busy.has(camera.id);
+    move.onclick = async () => {
+      if (!await concert.sure(`Move the ${word} from ${other.name} to ${camera.name}?\n\n${other.name} lets it go${other.online ? '' : ' when it is next connected'}, and ${camera.name} connects to it. Put it on ${camera.name} first.`, { ok: 'Move here' })) return;
+      try { const done = await api(`/api/cameras/${encodeURIComponent(camera.id)}/accessory`, { method: 'POST', body: JSON.stringify({ kind, from: other.id }) }); result.textContent = done.state === 'SUCCEEDED' ? `${camera.name} has the ${word} now.` : JSON.stringify(done, null, 2); }
+      catch (error) { result.textContent = error.message; }
+      refresh();
+    };
+    item.append(move); list.append(item);
+  }
+  const box = node('div', ''); box.append(node('small', `Or move one here from another camera:`), list);
+  return box;
+}
+function renameButton(camera) {
+  const button = node('button', 'Rename…'); button.disabled = busy.has(camera.id);
+  button.title = 'Change the name shown for this camera here. Its OBS source and scenes keep their names.';
+  button.onclick = async () => {
+    const got = await concert.ask({ title: `Rename ${camera.name}`, text: 'It keeps its slot, its settings and its place in OBS, whose source and scenes keep their names. Recordings already on this computer stay in its old folder; new ones go in a folder with the new name.',
+      fields: [{ name: 'name', label: 'New name', value: camera.name }], ok: 'Rename' });
+    if (!got || got.name.trim() === camera.name) return;
+    try { const done = await api(`/api/cameras/${encodeURIComponent(camera.id)}/name`, { method: 'POST', body: JSON.stringify({ name: got.name }) }); result.textContent = `${done.was} is now ${done.name}.`; }
+    catch (error) { result.textContent = error.message; }
+    refresh();
+  };
+  return button;
+}
 function removeButton(camera) {
   const t = camera.telemetry || {}, capturing = camera.online && (t.streaming || t.recording || t.capture?.streamRequested);
   const button = node('button', 'Remove camera…'); button.className = 'danger';
@@ -1350,7 +1383,7 @@ async function refresh() {
       for (const camera of paired) {
         const row = node('div', ''); row.className = 'paired-camera';
         row.append(node('span', `${camera.name} · slot ${camera.slot} · ${camera.online ? 'connected' : 'offline'}${camera.in_use === false ? ' · not in use here' : ''}`));
-        if (role === 'admin') row.append(asideButton(camera), removeButton(camera));
+        if (role === 'admin') row.append(renameButton(camera), asideButton(camera), removeButton(camera));
         pairedPanel.append(row);
       }
       pairedPanel.append(node('small', 'A camera this location does not use is set aside: it stays paired, for another location or another time. Removing a camera unpairs it for good; its recordings stay.'));
@@ -1619,12 +1652,25 @@ async function refresh() {
           const look = node('button', 'Look for a cooler'); look.disabled = !camera.online || busy.has(camera.id) || c.looking;
           look.title = 'Switch the cooler on and close the Black Shark app first: while it holds the cooler, the cooler cannot be found. Not while streaming or recording.';
           look.onclick = () => send(camera, 'cooler.settings', { look: true }, 'Look for a cooler');
+          if (capturing) look.title += ' It looks once this camera stops.';
           row.append(look); upkeep.append(row);
+          const moving = moveHere(camera, 'cooler', paired); if (moving) upkeep.append(moving);
+        }
+        // No gimbal: the same, to look for one (a new one: pair it with the phone once in Hohem's app, or look here).
+        if (t.capabilities?.gimbal && !camera.gimbal && t.gimbal) {
+          const g = t.gimbal;
+          const said = g.looking ? 'looking now…' : g.state === 'no_permission' ? 'the app is not allowed to use Bluetooth: allow it on the phone' : g.state === 'bluetooth_off' ? 'Bluetooth is off on the phone' : 'none paired with this phone';
+          const row = node('p', `Hohem gimbal: ${said}${g.error ? ` · ${g.error}` : ''} `); row.className = 'app-version';
+          const look = node('button', 'Look for a gimbal'); look.disabled = !camera.online || busy.has(camera.id) || g.looking;
+          look.title = 'Switch the gimbal on and close Hohem’s app first: while it holds the gimbal, the gimbal cannot be found. Not while streaming or recording.' + (capturing ? ' It looks once this camera stops.' : '');
+          look.onclick = () => send(camera, 'gimbal.settings', { look: true }, 'Look for a gimbal');
+          row.append(look); upkeep.append(row);
+          const moving = moveHere(camera, 'gimbal', paired); if (moving) upkeep.append(moving);
         }
         const tools = node('div', ''); tools.className = 'camera-controls';
         tools.append(command('Status', 'status.get'), command('Telemetry', 'metrics.get'), command('Restart SRT', 'stream.restart'), command('Reboot phone', 'system.reboot', true));
         upkeep.append(tools);
-        if (role === 'admin') { const manage = node('div', ''); manage.className = 'camera-controls'; manage.append(asideButton(camera), removeButton(camera)); upkeep.append(manage); }
+        if (role === 'admin') { const manage = node('div', ''); manage.className = 'camera-controls'; manage.append(renameButton(camera), asideButton(camera), removeButton(camera)); upkeep.append(manage); }
       } else if (role === 'admin' && !window.concert.session?.away) {
         // An empty slot is where a new camera goes: say how.
         const add = document.createElement('a'); add.href = '/phones'; add.className = 'button'; add.textContent = 'Add a phone…';
@@ -1663,6 +1709,10 @@ async function refresh() {
             if (s) trial.append(node('small', `Set to ${['off', '30 min', '60 min'][s.set]} ${Math.round(s.seconds_ago / 60)} min ago; the cooler reads ${s.read || 'nothing yet'}`));
             chill.append(trial);
           }
+          const other = node('button', 'Pair a different cooler'); other.disabled = off;
+          other.title = 'Lets go of this one and looks for coolers near the phone. Not while streaming or recording.';
+          other.onclick = async () => { if (await concert.sure(`${camera.name}: let go of this cooler and look for another? Switch the new one on near the phone first.`, { ok: 'Look' })) set({ address: '', look: true }, 'Pair a different cooler'); };
+          chill.append(other);
           const forget = node('button', 'Forget this cooler'); forget.disabled = off;
           forget.onclick = async () => { if (await concert.sure(`${camera.name}: forget its cooler? The phone lets go of it and looks for coolers nearby again.`, { ok: 'Forget' })) set({ address: '' }, 'Forget cooler'); };
           chill.append(node('p', `${cooler.name || 'Cooler'} ${cooler.address}${cooler.firmware ? ` · firmware ${cooler.firmware}` : ''}`), forget);
@@ -1714,6 +1764,10 @@ async function refresh() {
             box.onchange = () => set({ [key]: box.checked }, `Gimbal: ${text} ${box.checked ? 'on' : 'off'}`);
             label.append(box, node('span', ` ${text} `)); axes.append(label);
           }
+          const other = node('button', 'Pair a different gimbal'); other.disabled = off;
+          other.title = 'Lets go of this one and looks for gimbals near the phone. Not while streaming or recording.';
+          other.onclick = async () => { if (await concert.sure(`${camera.name}: let go of this gimbal and look for another? Switch the new one on near the phone, and close Hohem’s app.`, { ok: 'Look' })) set({ address: '', look: true }, 'Pair a different gimbal'); };
+          turn.append(other);
           const forget = node('button', 'Forget this gimbal'); forget.disabled = off;
           forget.onclick = async () => { if (await concert.sure(`${camera.name}: forget its gimbal? The phone lets go of it until one is chosen again.`, { ok: 'Forget' })) set({ address: '' }, 'Forget gimbal'); };
           turn.append(axes, node('p', `${gimbal.name || 'Gimbal'} ${gimbal.address}`), forget);
@@ -1741,7 +1795,7 @@ async function refresh() {
       for (const camera of aside) {
         const t = camera.telemetry || {}, row = node('div', ''); row.className = 'paired-camera';
         row.append(node('span', `${camera.name} · slot ${camera.slot} · ${camera.online ? `connected, not used${t.armed ? ' · armed' : ''}${t.streaming ? ' · streaming' : ''}${t.recording ? ' · RECORDING' : ''}` : 'offline'}`));
-        if (role === 'admin') row.append(asideButton(camera), removeButton(camera));
+        if (role === 'admin') row.append(renameButton(camera), asideButton(camera), removeButton(camera));
         card.append(row);
       }
       card.append(node('small', 'Kept paired with their settings, and left out of the director, “Start All”, the OBS scenes and the readiness checks at this location.'));
