@@ -1654,6 +1654,10 @@ async function refresh() {
           look.onclick = () => send(camera, 'cooler.settings', { look: true }, 'Look for a cooler');
           if (capturing) look.title += ' It looks once this camera stops.';
           row.append(look); upkeep.append(row);
+          // A look asked from here is made with the phone's screen off, mostly: Android then gives only what is named in
+          // the app's list, so a cooler it does not know by name is missed. The phone's own button listens to everything.
+          if (!c.looking && c.state === 'not_found' && last && !last.wide)
+            upkeep.append(node('small', 'Not found? Switch the cooler on, close the Black Shark app, and tap Black Shark cooler… in the camera app on the phone: with its screen on, the phone hears every cooler, not only those it knows by name.'));
           const moving = moveHere(camera, 'cooler', paired); if (moving) upkeep.append(moving);
         }
         // No gimbal: the same, to look for one (a new one: pair it with the phone once in Hohem's app, or look here).
