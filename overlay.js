@@ -120,10 +120,17 @@ function show(state) {
   shown = { side: state.side, recipeKey, current: where, address: state.address, caption: said, popup: popped, lower: named };
 }
 
+let loaded = null;                   // the version of the overlay's files this page was loaded with
 async function poll() {
   try {
     const response = await fetch(`/api/overlay/state?key=${encodeURIComponent(key)}`, { cache: 'no-store' });
-    if (response.ok) show(await response.json());
+    if (response.ok) {
+      const state = await response.json();
+      // A new manager with new overlay files: this page loads them, so OBS never shows an old copy.
+      if (state.version && loaded && state.version !== loaded) { location.reload(); return; }
+      loaded = loaded || state.version;
+      show(state);
+    }
     else show({ on: false });
   } catch (error) { /* the manager restarting: keep what is shown, try again */ }
   setTimeout(poll, 500);

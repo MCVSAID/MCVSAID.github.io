@@ -215,6 +215,12 @@
     return details;
   }
 
+  // OBS has stopped asking for the overlay (overlay.py, Overlay.watch): nothing laid over the programme shows.
+  function notShown(o) {
+    const warn = node('p', `OBS is not showing the overlay: its browser source has not asked for it for ${Math.round(o.quiet / 60) ? `${Math.round(o.quiet / 60)} min` : `${o.quiet} s`}, so the recipe, QR code and captions do not reach the programme. ${o.reloads ? 'The manager has asked OBS to load it again. ' : ''}If it stays like this, in OBS open the source “MCVSAID · Overlay” and press Refresh cache of current page, or restart OBS.`);
+    warn.className = 'recording-warning'; return warn;
+  }
+
   // -- on screen --------------------------------------------------------------------------------------------------------
   function screen(o, recipe) {
     const box = node('div', ''); box.append(node('h3', 'On screen'));
@@ -233,6 +239,7 @@
       if (o.problem) obs.className = 'recording-warning';
     }
     box.append(obs);
+    if (o.obs && o.quiet) box.append(notShown(o));
     if (o.page) { const look = document.createElement('a'); look.href = o.page; look.target = '_blank'; look.rel = 'noopener'; look.textContent = 'Preview the overlay in a new tab'; box.append(look); }
     return box;
   }
@@ -302,6 +309,7 @@
     box.append(row);
     const owed = Object.keys(p.needs || {});
     if (p.step && owed.length) box.append(node('small', `Still to show for this step: ${owed.map(station).join(', ')}.`));
+    if (state.overlay?.obs && state.overlay.quiet) box.append(notShown(state.overlay));
     return box;
   }
 
@@ -313,7 +321,7 @@
   function paint() {
     if (!state) return;
     if (!editing(summary)) {
-      const key = JSON.stringify([state.cooking, state.progress && { ...state.progress, seconds: null, caption: null, steps: null, history: null }, busy]);
+      const key = JSON.stringify([state.cooking, state.progress && { ...state.progress, seconds: null, caption: null, steps: null, history: null }, state.overlay?.quiet, busy]);
       if (drawn.summary !== key) { drawn.summary = key; summary.replaceChildren(summaryBox()); }
     }
     if (!state.cooking) {
