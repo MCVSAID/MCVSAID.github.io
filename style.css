@@ -68,6 +68,9 @@ main section > h2, #devices-setup > h2 { margin:18px 0 6px; font-size:1.25rem; }
 /* A camera card: what is needed now first, the rest folded. */
 .camera-state { font-weight:600; margin:4px 0 8px; } .camera-state.online::before { content:'● '; color:#6fcf97; } .camera-state.offline::before { content:'● '; color:#e2725b; }
 .camera-controls { display:flex; flex-wrap:wrap; gap:2px; margin:8px 0; }
+.aim-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
+.aim-pad { display:grid; grid-template-columns:repeat(3, 44px); grid-auto-rows:44px; gap:4px; touch-action:none; user-select:none; -webkit-user-select:none; }
+.aim-pad button { margin:0; padding:0; font-size:18px; }
 details.fold { margin:8px 0 0; border-top:1px solid #2c3e4f; padding-top:4px; }
 details.fold > summary { cursor:pointer; padding:10px 4px; font-weight:600; color:#cfe0ee; min-height:24px; list-style-position:inside; }
 details.fold > summary span { font-weight:400; color:#b7c6d4; }

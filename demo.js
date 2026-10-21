@@ -418,6 +418,7 @@
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
   }
+  let gimbalNoted = false;
   function command(id, body) {
     const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
     const t = camera.telemetry = camera.telemetry || {}, capture = t.capture = t.capture || {};
@@ -442,6 +443,22 @@
         const mode = { overclock_streaming: 'overclock while streaming', manual: `fixed speed ${level}` }[c.fan] || c.fan;
         if (typeof c.summary === 'string') c.summary = c.summary.replace(/^Cooler: [^,]*, [\d,]+ rpm/, `Cooler: ${mode}, ${c.fan_rpm.toLocaleString('en')} rpm`);
       }
+    }
+    else if (what === 'settings.update' && 'rotation' in (body.parameters || {})) {
+      // The picture turned round; in the demo the pictures are drawn, so they stay as they are.
+      t.rotation = body.parameters.rotation; note('In the demo the pictures are drawn, so they are not turned round.');
+    }
+    else if (what.startsWith('gimbal.')) {
+      // As the simulated phone does: it says it is turning while an arrow is held, and keeps which way its axes go.
+      // Nothing turns: the pictures are drawn.
+      const p = body.parameters || {};
+      for (const g of [t.gimbal, camera.gimbal].filter(x => x && typeof x === 'object')) {
+        if (what === 'gimbal.settings') for (const k of ['swap', 'invert_pan', 'invert_tilt', 'upside_down']) if (k in p) g[k] = !!p[k];
+        if (what === 'gimbal.move' || what === 'gimbal.stop') g.moving = what === 'gimbal.move' && !!(p.pan || p.tilt);
+        if ('summary' in g) g.summary = g.moving ? 'Gimbal: connected, moving' : 'Gimbal: connected';
+      }
+      if (what === 'gimbal.move' && !gimbalNoted) { gimbalNoted = true; note('In the demo the gimbal says it turns, but the pictures are drawn, so nothing moves.'); }
+      if (p.look) note('In the demo the gimbal is already found.');
     }
     tick(); save();
     return answer({ id: body.request_id || 'demo', camera_id: id, state: 'SUCCEEDED', result: { type: 'ack', ok: true, demo: true }, created: now() });

@@ -101,6 +101,44 @@ function fold(key, title) {
   return group;
 }
 function node(tag, text) { const element = document.createElement(tag); element.textContent = text; return element; }
+// Aiming a camera's gimbal: a move every 300 ms for as long as an arrow is held (each lasts half a second on the phone,
+// so a closed page stops it by itself), and a stop on letting go, wherever that happens: the card is redrawn every two
+// seconds beneath the pointer. A stop waits for a move on its way, so that it is the last word.
+let aiming = null;
+const aimSpeeds = new Map();
+async function aimSend(cameraId, command, parameters) {
+  try {
+    const outcome = await api(`/api/cameras/${encodeURIComponent(cameraId)}/commands`, { method: 'POST', body: JSON.stringify({ request_id: crypto.randomUUID(), command, parameters, timeout_seconds: 3 }) });
+    if (outcome.state !== 'SUCCEEDED') result.textContent = `Gimbal: ${outcome.result?.error || outcome.state}`;
+  } catch (error) { if (!/rate limit/i.test(error.message)) result.textContent = `Gimbal: ${error.message}`; }
+}
+function aimStart(camera, pan, tilt) {
+  aimStop();
+  const held = aiming = { id: camera.id };
+  const step = () => {
+    if (aiming !== held) return;
+    const began = Date.now();
+    held.flight = aimSend(held.id, 'gimbal.move', { pan, tilt }).then(() => { if (aiming === held) held.timer = setTimeout(step, Math.max(0, 300 - (Date.now() - began))); });
+  };
+  step();
+}
+function aimStop() {
+  if (!aiming) return;
+  const held = aiming; aiming = null; clearTimeout(held.timer);
+  Promise.resolve(held.flight).finally(() => aimSend(held.id, 'gimbal.stop', {}));
+}
+for (const event of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(event, aimStop);
+document.addEventListener('visibilitychange', () => { if (document.hidden) aimStop(); });
+/** A button that turns the gimbal while held, by mouse, touch or keyboard. */
+function aimButton(camera, label, title, pan, tilt, off) {
+  const button = node('button', label); button.title = title; button.setAttribute('aria-label', title); button.disabled = off;
+  const speed = () => aimSpeeds.get(camera.id) || 50;
+  button.onpointerdown = event => { event.preventDefault(); aimStart(camera, pan * speed(), tilt * speed()); };
+  button.onkeydown = event => { if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) { event.preventDefault(); aimStart(camera, pan * speed(), tilt * speed()); } };
+  button.onkeyup = event => { if (event.key === 'Enter' || event.key === ' ') aimStop(); };
+  button.oncontextmenu = event => event.preventDefault();
+  return button;
+}
 async function send(camera, command, parameters = {}, label = command) {
   if (busy.has(camera.id)) return;
   const warnings = {
@@ -1480,6 +1518,23 @@ async function refresh() {
           const sizeRow = node('label', 'Stream size '); sizeRow.append(size);
           picture.append(sizeRow, node('small', 'Stream picture size at 30 fps. Stop SRT and local recording to change it.'));
         }
+        // The picture turned round, for a phone mounted upside down (with a gimbal or without). Portrait is set on the phone.
+        if (t.capabilities?.picture_turn && (t.rotation ?? 0) % 180 === 0) {
+          const turnRow = node('label', ''), turnBox = document.createElement('input'); turnBox.type = 'checkbox';
+          turnBox.checked = t.rotation === 180; turnBox.disabled = !camera.online || busy.has(camera.id);
+          // The phone takes it when its camera starts: a running camera is stopped, turned and started again, once asked.
+          turnBox.onchange = async () => {
+            const rotation = turnBox.checked ? 180 : 0, label = rotation ? 'Turn picture 180°' : 'Picture the right way up';
+            if (!capturing) { send(camera, 'settings.update', { rotation }, label); return; }
+            const streaming = t.streaming || t.capture?.streamRequested, recording = t.recording;
+            if (!await concert.sure(`${camera.name}: this stops its ${[streaming && 'stream', recording && 'local recording'].filter(Boolean).join(' and ')} for a few seconds, turns the picture ${rotation ? 'round 180°' : 'the right way up'}, then starts ${recording && streaming ? 'them' : 'it'} again.${recording ? ' The current recording file is closed and a new one begins.' : ''}`, { ok: label })) { turnBox.checked = !turnBox.checked; return; }
+            sequence(camera, [streaming && ['Stop SRT', 'stream.stop'], recording && ['Finalize local MP4', 'recording.stop'], [label, 'settings.update', { rotation }],
+              recording && ['Start local MP4', 'recording.start'], streaming && ['Start SRT', 'stream.start']].filter(Boolean), label);
+          };
+          turnRow.append(turnBox, node('span', ' Turn picture 180° (phone mounted upside down)'));
+          picture.append(turnRow, node('small', capturing ? 'Changing it stops this camera for a few seconds and starts it again: the phone turns its picture as its camera starts.'
+            : 'Applies the next time the camera starts.'));
+        }
         // Which rear lens the phone uses, and zoom on its sensor. Phones with one lens show only the zoom.
         if (t.capabilities?.lens_choice) {
             const lenses = t.lenses || [];
@@ -1625,7 +1680,58 @@ async function refresh() {
         }
         chill.append(node('small', ' Power the cooler from a USB charger, not from the camera switch. Close the Black Shark app on the phone: it holds the cooler while it is open.'));
       }
-      for (const group of [shots, picture, upkeep, chill]) if (group.childElementCount > 1) card.append(group);
+      // A Hohem gimbal holding the phone: hold an arrow to turn it. Nothing for a phone without one.
+      const turn = fold(`${key}:gimbal`, 'Gimbal');
+      if (camera?.gimbal) {
+        const gimbal = camera.gimbal, off = !camera.online || busy.has(camera.id);
+        const set = (parameters, label) => send(camera, 'gimbal.settings', parameters, label);
+        if (gimbal.summary) { const line = node('p', gimbal.summary); line.className = gimbal.address && !gimbal.connected ? 'app-version recording-warning' : 'app-version'; card.append(line); }
+        if (gimbal.address) {
+          if (gimbal.connected) {
+            const pad = node('div', ''); pad.className = 'aim-pad';
+            const stop = node('button', '■'); stop.title = 'Stop'; stop.setAttribute('aria-label', 'Stop the gimbal'); stop.disabled = !camera.online;
+            stop.onclick = () => { aimStop(); aimSend(camera.id, 'gimbal.stop', {}); };
+            pad.append(node('span', ''), aimButton(camera, '▲', 'Tilt up (hold)', 0, 1, off), node('span', ''),
+              aimButton(camera, '◀', 'Pan left (hold)', -1, 0, off), stop, aimButton(camera, '▶', 'Pan right (hold)', 1, 0, off),
+              node('span', ''), aimButton(camera, '▼', 'Tilt down (hold)', 0, -1, off), node('span', ''));
+            const speed = document.createElement('select'); speed.setAttribute('aria-label', 'Gimbal speed');
+            for (const [text, value] of [['Slow', 20], ['Medium', 50], ['Fast', 100]]) { const option = node('option', text); option.value = value; option.selected = (aimSpeeds.get(camera.id) || 50) === value; speed.append(option); }
+            speed.onchange = () => aimSpeeds.set(camera.id, Number(speed.value));
+            const row = node('div', ''); row.className = 'aim-row'; row.append(pad, speed);
+            turn.append(row, node('small', 'Hold an arrow to turn the camera; it stops when you let go, and by itself within half a second if this page or the network goes.'));
+          }
+          // Hung upside down: the arrows are turned round. The picture is turned round on its own, under Picture & stream.
+          const hung = node('p', ''), hungLabel = node('label', ''), hungBox = document.createElement('input'); hungBox.type = 'checkbox';
+          hungBox.checked = gimbal.upside_down; hungBox.disabled = off;
+          hungBox.onchange = () => set({ upside_down: hungBox.checked }, `Gimbal: upside down ${hungBox.checked ? 'on' : 'off'}`);
+          hungLabel.append(hungBox, node('span', ' Mounted upside down (hanging)'));
+          hung.append(hungLabel);
+          turn.append(hung, node('small', 'Turns both arrows round, so they still go the way they point. To turn the picture itself, see Picture & stream.'));
+          // Right on an X3 as it comes; for a gimbal that turns another way, put right here once, for this phone.
+          const axes = node('p', 'If it turns the wrong way: ');
+          for (const [key, text] of [['swap', 'swap pan and tilt'], ['invert_pan', 'reverse pan'], ['invert_tilt', 'reverse tilt']]) {
+            const label = node('label', ''), box = document.createElement('input'); box.type = 'checkbox'; box.checked = gimbal[key]; box.disabled = off;
+            box.onchange = () => set({ [key]: box.checked }, `Gimbal: ${text} ${box.checked ? 'on' : 'off'}`);
+            label.append(box, node('span', ` ${text} `)); axes.append(label);
+          }
+          const forget = node('button', 'Forget this gimbal'); forget.disabled = off;
+          forget.onclick = async () => { if (await concert.sure(`${camera.name}: forget its gimbal? The phone lets go of it until one is chosen again.`, { ok: 'Forget' })) set({ address: '' }, 'Forget gimbal'); };
+          turn.append(axes, node('p', `${gimbal.name || 'Gimbal'} ${gimbal.address}`), forget);
+        }
+        if (gimbal.nearby.length) {
+          turn.append(node('p', gimbal.address ? 'Other gimbals nearby:' : 'Several gimbals are nearby. Which one holds this phone?'));
+          const list = node('ul', '');
+          for (const other of gimbal.nearby) {
+            const item = node('li', `${other.name || 'Gimbal'} ${other.address}${other.rssi ? ` · ${other.rssi} dBm` : ''} `);
+            const use = node('button', 'This one'); use.disabled = off; use.onclick = () => set({ address: other.address }, `Use gimbal ${other.address}`);
+            item.append(use); list.append(item);
+          }
+          const again = node('button', 'Look again'); again.disabled = off; again.onclick = () => set({ look: true }, 'Look for gimbals');
+          turn.append(list, again);
+        }
+        turn.append(node('small', ' Pair the gimbal with the phone once (Hohem’s app does it), then close Hohem’s app: it holds the gimbal while it is open.'));
+      }
+      for (const group of [shots, picture, upkeep, chill, turn]) if (group.childElementCount > 1) card.append(group);
       grid.append(card);
     }
     if (aside.length) {
