@@ -117,7 +117,7 @@
     const label = s ? s.label : `a new ${section === 'prep' ? 'preparation step' : 'step'}`;
     const text = document.createElement('textarea'); text.rows = 2; text.value = s ? s.text : ''; text.maxLength = 400; text.required = true; text.setAttribute('aria-label', `Words of ${label}`);
     text.placeholder = section === 'prep' ? 'Weigh out the flour and sugar.' : 'Fold in the flour.';
-    const caption = document.createElement('input'); caption.type = 'text'; caption.value = s ? s.caption : ''; caption.maxLength = 60; caption.size = 28; caption.setAttribute('aria-label', `Caption for ${label}`);
+    const caption = document.createElement('input'); caption.type = 'text'; caption.value = s ? s.caption : ''; caption.maxLength = 80; caption.size = 28; caption.setAttribute('aria-label', `Caption for ${label}`);
     caption.placeholder = s ? '' : 'On screen (made from the words if left empty)';
     const picks = stationPicks(s ? s.stations : [], label);
     const stations = node('span', ''); stations.className = 'recipe-picks'; stations.append(node('span', 'Stations to show '), ...picks);
@@ -225,7 +225,7 @@
     row.id = 'overlay-buttons'; box.append(row);
     box.append(checkbox('Call out each step on screen as it begins, and “continued” when the programme comes back to it', o.captions, on => overlay({ captions: on })));
     const shown = o.showing || {};
-    box.append(node('p', `The recipe goes on the side away from the cook: ${shown.on ? `the ${shown.side} now` : 'right, until the cook has been found'}. A step popped up and an ingredient named go on the same side, for a few seconds.`));
+    box.append(node('p', `The recipe goes on the side away from the cook: ${shown.on ? `the ${shown.side} now` : 'right, until the cook has been found'}. A step popped up goes there too; the QR code goes in the lower corner on the cook’s side, with an ingredient named just above it, and a recipe too long for its panel says how many steps are out of sight.`));
     const obs = node('p', '');
     if (!o.obs) obs.append(button('Add the overlay to OBS', () => overlay({ obs: true }), 'Puts a browser source on top in every programme scene'), node('small', ' Needed once: OBS shows the overlay in every programme scene.'));
     else {

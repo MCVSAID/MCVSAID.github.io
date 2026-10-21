@@ -6,11 +6,14 @@ body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #ff
   transition: opacity 0.45s ease; opacity: 1; }
 .panel.fading, #caption.fading, #lower.fading { opacity: 0; }
 
-#card { top: 5vh; width: 29vw; max-height: 60vh; padding: 1.6vw 1.8vw; overflow: hidden; font-size: 1.05vw; line-height: 1.35; }
-.side-right #card, .side-right #qr { right: 3vw; }
-.side-left #card, .side-left #qr { left: 3vw; }
-.no-qr #card { max-height: 86vh; }
-#card.more { -webkit-mask-image: linear-gradient(#000 85%, transparent); mask-image: linear-gradient(#000 85%, transparent); }
+/* The recipe has the whole height of its side, away from the cook; its QR code is in the other lower corner, under the cook. */
+#card { top: 5vh; width: 32.6vw; max-height: 78vh; box-sizing: border-box; padding: 1.6vw 1.8vw; overflow: hidden; font-size: 1.05vw; line-height: 1.35; }
+.side-right #card { right: 3vw; } .side-left #card { left: 3vw; }
+.side-right #qr { left: 3vw; } .side-left #qr { right: 3vw; }
+/* More of the recipe than its panel has room for: a line saying so where it is cut, above and below. */
+.more-line { padding: 0.25em 0; font-size: 1em; font-weight: 700; letter-spacing: 0.08em; color: #f6c35b; }
+#more-above { margin-bottom: 0.3em; border-bottom: 0.12vw solid rgba(246, 195, 91, 0.5); }
+#more-below { margin-top: 0.1em; border-top: 0.12vw solid rgba(246, 195, 91, 0.5); }
 #card h1 { margin: 0 0 0.6em; font-size: 1.9em; line-height: 1.1; font-weight: 700; }
 #card h2 { margin: 0.8em 0 0.3em; font-size: 0.85em; letter-spacing: 0.12em; text-transform: uppercase; color: #f6c35b; }
 #ingredients { margin: 0; padding-left: 1.1em; columns: 2; column-gap: 1.6em; }
@@ -29,21 +32,25 @@ body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #ff
 
 #caption { position: absolute; bottom: 7vh; left: 50%; transform: translateX(-50%); max-width: 46vw; padding: 0.9vw 1.8vw;
   background: rgba(14, 18, 24, 0.86); border-left: 0.45vw solid #f6c35b; border-radius: 0.6vw; font-size: 2vw; font-weight: 650;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 0.45s ease; opacity: 1; }
+  line-height: 1.2; width: max-content; box-sizing: border-box; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3; transition: opacity 0.45s ease; opacity: 1; }
 #caption.continued { font-size: 1.5vw; font-weight: 500; font-style: italic; border-left-color: #8fb3d9; }
-/* With the QR code up, the caption is centred in the room beside it, so the two never meet. */
-.side-right:not(.no-qr) #caption { left: 35vw; max-width: 60vw; }
-.side-left:not(.no-qr) #caption { left: 65vw; max-width: 60vw; }
+/* With the QR code (or an ingredient's line) in the cook's corner, the caption is centred in the room beside it, so they
+   never meet; the recipe ends above it. */
+.side-right:not(.no-qr) #caption, .side-right.lower-up #caption { left: 64vw; max-width: 56vw; }
+.side-left:not(.no-qr) #caption, .side-left.lower-up #caption { left: 36vw; max-width: 56vw; }
 
 /* A step popped up (a spoken cue, or the operator): on the side away from the cook, where the recipe goes, which gives way to it. */
 #popup { top: 5vh; width: 30vw; padding: 1.4vw 1.8vw 1.5vw; border-left: 0.45vw solid #f6c35b; }
 .side-right #popup { right: 3vw; } .side-left #popup { left: 3vw; }
 #popup-label { margin: 0 0 0.3vw; font-size: 1.05vw; letter-spacing: 0.12em; text-transform: uppercase; color: #f6c35b; font-weight: 700; }
 #popup-caption { margin: 0 0 0.5vw; font-size: 2.1vw; line-height: 1.15; font-weight: 700; }
-#popup-text { margin: 0; font-size: 1.15vw; line-height: 1.35; color: #d7dde5; }
-/* An ingredient named: a lower third at the foot of the programme on the cook's side; a step's caption rises above it. */
-#lower { position: absolute; bottom: 7vh; max-width: 40vw; padding: 0.8vw 1.6vw 0.8vw 1.2vw; background: rgba(14, 18, 24, 0.86);
-  border-left: 0.45vw solid #7fc8a9; border-radius: 0.6vw; font-size: 1.7vw; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+#popup-text { margin: 0; font-size: 1.15vw; line-height: 1.35; color: #d7dde5; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; }
+/* An ingredient named: a lower third at the foot of the programme on the cook's side, beside a step's caption. */
+#lower { position: absolute; bottom: 7vh; max-width: 30vw; padding: 0.8vw 1.6vw 0.8vw 1.2vw; background: rgba(14, 18, 24, 0.86);
+  border-left: 0.45vw solid #7fc8a9; border-radius: 0.6vw; font-size: 1.7vw; font-weight: 600; line-height: 1.2;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
   transition: opacity 0.45s ease; opacity: 1; }
 .side-right #lower { left: 3vw; } .side-left #lower { right: 3vw; }
-body.lower-up #caption { bottom: 17vh; }
+/* With the QR code in the cook's corner, the ingredient's line sits just above it. */
+body:not(.no-qr) #lower { bottom: calc(5vh + 13vw); }

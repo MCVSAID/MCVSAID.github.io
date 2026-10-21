@@ -217,7 +217,7 @@
     else if ('id' in body) { if (!known[body.id]) return refused('that step is no longer in the recipe'); begin(at(body.id), 'operator'); }
     save(); return answer(recipeRead());
   }
-  const shortCaption = text => { const t = text.replace(/\.$/, '').split(/[,;.]/)[0].trim(); return t.length <= 60 ? t : `${t.slice(0, 59).replace(/\s+\S*$/, '')}…`; };
+  const shortCaption = text => { const t = text.replace(/\.$/, '').split(/[,;.]/)[0].trim(); return t.length <= 80 ? t : `${t.slice(0, 79).replace(/\s+\S*$/, '')}…`; };
   function freshId(prefix, taken) { for (let n = 1; ; n++) if (!taken.has(`${prefix}${n}`)) return `${prefix}${n}`; }
   function editPost(body) {
     const r = R(); if (!r.recipe) return refused('No recipe is loaded', 409);
@@ -225,7 +225,7 @@
     const find = id => { for (const [name, list] of Object.entries(parts)) { const n = list.findIndex(s => s.id === id); if (n >= 0) return [name, n]; } return null; };
     const fill = (s, given) => {
       if ('text' in given) { const text = String(given.text || '').trim().slice(0, 400); if (!text) throw new Error('a step needs some words'); if (text !== s.text) { s.text = text; if (!('caption' in given)) s.caption = shortCaption(text); if (!('stations' in given)) s.stations = s.stations || []; } }
-      if ('caption' in given) s.caption = String(given.caption || '').trim().slice(0, 60) || shortCaption(s.text);
+      if ('caption' in given) s.caption = String(given.caption || '').trim().slice(0, 80) || shortCaption(s.text);
       if (Array.isArray(given.stations)) s.stations = given.stations.filter(k => r.stations.some(([key]) => key === k)).slice(0, 2);
       return s;
     };

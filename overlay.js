@@ -2,6 +2,8 @@
 // code, the step captions, and for a few seconds a step popped up or an ingredient's line as a lower third.
 const key = new URLSearchParams(location.search).get('key') || '';
 const $ = id => document.getElementById(id);
+// drawn: the recipe the card was last filled with, which is not always the one last shown (a pop-up keeps the card away).
+let drawn = null;
 let shown = { side: null, recipeKey: null, current: null, address: null, caption: null, popup: null, lower: null };
 
 function fade(element, show, then) {
@@ -12,19 +14,42 @@ function fade(element, show, then) {
 }
 
 function fit(card, tries = 10) {
-  // The whole recipe in its panel: the type made smaller until it fits (down to a size still readable on a phone). It is
+  // The whole recipe in its panel: the type made smaller until it fits, but no smaller than reads easily on a stream (about
+  // 16 px on a 1080p canvas); beyond that, what does not fit is said to be there (the more lines) rather than shrunk. It is
   // measured once shown: while hidden it has no size, and fitted then it was never made smaller (2026-10-19).
   if (card.hidden) { if (tries) requestAnimationFrame(() => fit(card, tries - 1)); return; }
   // The preparation all done and the method under way: it folds away, to leave the room to the method.
   const prep = [...$('prep').children];
   $('prep-part').hidden = !prep.length || (prep.every(li => li.classList.contains('done')) && !!$('steps').querySelector('li.current'));
+  const above = $('more-above'), below = $('more-below');
+  const steps = [...card.querySelectorAll('#prep-part:not([hidden]) li, #steps li')];
+  const parts = [$('prep-part'), $('steps-part')].filter(part => !part.hidden);
+  steps.forEach(li => { li.hidden = false; }); parts.forEach(part => { part.hidden = false; });
+  above.hidden = below.hidden = true; $('ingredients-part').hidden = !$('ingredients').children.length;
+  const over = () => card.scrollHeight > card.clientHeight + 1;
   let size = 1.05;
   card.style.fontSize = `${size}vw`;
-  while (card.scrollHeight > card.clientHeight + 1 && size > 0.62) { size -= 0.04; card.style.fontSize = `${size}vw`; }
-  // Still too long: the current step kept in view, and the foot faded rather than cut off mid-line.
-  const now = card.querySelector('li.current'), over = card.scrollHeight > card.clientHeight + 1;
-  card.classList.toggle('more', over);
-  if (now && over) card.scrollTop = Math.max(0, now.offsetTop - card.clientHeight / 3);
+  while (over() && size > 0.86) { size -= 0.04; card.style.fontSize = `${size}vw`; }
+  if (!over()) return;
+  // Still too long: whole steps only, never one cut through. A run of them from the step before the one being cooked, as
+  // many as fit, and a line where the others are left out saying how many.
+  const at = Math.max(0, steps.findIndex(li => li.classList.contains('current')));
+  let first = Math.max(0, at - 1), last = steps.length - 1;
+  const steps_ = n => `step${n === 1 ? '' : 's'}`;
+  const show = () => {
+    steps.forEach((li, n) => { li.hidden = n < first || n > last; });
+    for (const part of parts) part.hidden = [...part.querySelectorAll('li')].every(li => li.hidden);
+    above.hidden = first === 0; below.hidden = last === steps.length - 1;
+    if (!above.hidden) { above.textContent = `⋯ ${first} ${steps_(first)} before`; steps[first].parentElement.before(above); }
+    if (!below.hidden) { const more = steps.length - 1 - last; below.textContent = `⋯ ${more} more ${steps_(more)}`; steps[last].parentElement.after(below); }
+  };
+  show();
+  while (over() && last > at) { last -= 1; show(); }
+  while (over() && first < at) { first += 1; show(); }
+  // Near the end, room left below: the earlier steps fill it.
+  while (first > 0 && !over()) { first -= 1; show(); if (over()) { first += 1; show(); break; } }
+  // Even the step being cooked has no room beside the ingredients: they give way to it.
+  if (over()) $('ingredients-part').hidden = true;
 }
 
 function fill(state) {
@@ -34,8 +59,9 @@ function fill(state) {
   $('ingredients').replaceChildren(...ingredients.map(text => Object.assign(document.createElement('li'), { textContent: text })));
   const prep = state.recipe.prep || [];
   $('prep-part').hidden = !prep.length;
-  $('prep').replaceChildren(...prep.map(text => Object.assign(document.createElement('li'), { textContent: text })));
-  $('steps').replaceChildren(...state.recipe.steps.map(text => Object.assign(document.createElement('li'), { textContent: text })));
+  // Each numbered as it is in the recipe, so a step keeps its number when those around it are left out (fit).
+  $('prep').replaceChildren(...prep.map((text, n) => Object.assign(document.createElement('li'), { textContent: text, value: n + 1 })));
+  $('steps').replaceChildren(...state.recipe.steps.map((text, n) => Object.assign(document.createElement('li'), { textContent: text, value: n + 1 })));
 }
 
 function mark(state) {
@@ -61,8 +87,8 @@ function show(state) {
   const recipeKey = state.recipe ? JSON.stringify([state.title, state.recipe]) : null;
   const where = JSON.stringify([state.current_prep, state.current, state.done]);
   if (state.recipe && !state.popup) {
-    const refill = recipeKey !== shown.recipeKey;
-    fade(card, true, sideChanged || refill || card.hidden ? () => { place(); if (refill) fill(state); mark(state); fit(card); } : null);
+    const refill = recipeKey !== drawn;
+    fade(card, true, sideChanged || refill || card.hidden ? () => { place(); if (refill) { fill(state); drawn = recipeKey; } mark(state); fit(card); } : null);
     if (!refill && shown.current !== where) { mark(state); fit(card); }
   } else fade(card, false);
   // A step popped up: "Step 2 of 5", its caption, its words.
