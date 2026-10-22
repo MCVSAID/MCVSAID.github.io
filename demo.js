@@ -555,10 +555,12 @@
       for (const g of [t.gimbal, camera.gimbal].filter(x => x && typeof x === 'object')) {
         if (what === 'gimbal.settings') for (const k of ['swap', 'invert_pan', 'invert_tilt', 'upside_down']) if (k in p) g[k] = !!p[k];
         if (what === 'gimbal.move' || what === 'gimbal.stop') g.moving = what === 'gimbal.move' && !!(p.pan || p.tilt);
-        if ('summary' in g) g.summary = g.moving ? 'Gimbal: connected, moving' : 'Gimbal: connected';
+        if (what === 'gimbal.follow') g.follow = p.on ? { state: 'following', hands_on: false } : null;
+        if ('summary' in g) g.summary = (g.moving ? 'Gimbal: connected, moving' : 'Gimbal: connected') + (g.follow ? '; following' : '');
       }
       if (what === 'gimbal.move' && !gimbalNoted) { gimbalNoted = true; note('In the demo the gimbal says it turns, but the pictures are drawn, so nothing moves.'); }
       if (p.look) note('In the demo no other gimbal is near: Move here takes one from another camera.');
+      if (what === 'gimbal.follow' && p.on) note('In the demo the camera says it follows the most prominent face, but the pictures are drawn, so nothing moves.');
     }
     tick(); save();
     return answer({ id: body.request_id || 'demo', camera_id: id, state: 'SUCCEEDED', result: { type: 'ack', ok: true, demo: true }, created: now() });

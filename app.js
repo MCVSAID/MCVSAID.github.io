@@ -1761,6 +1761,17 @@ async function refresh() {
             speed.onchange = () => aimSpeeds.set(camera.id, Number(speed.value));
             const row = node('div', ''); row.className = 'aim-row'; row.append(pad, speed);
             turn.append(row, node('small', 'Hold an arrow to turn the camera; it stops when you let go, and by itself within half a second if this page or the network goes.'));
+            // Following someone (app 0.9.27): the phone finds faces in its own picture and turns the gimbal itself; the
+            // arrows take over for a few seconds whenever they are used.
+            if ((camera.telemetry || {}).capabilities?.gimbal_follow) {
+              const follows = node('p', ''), label = node('label', ''), box = document.createElement('input'); box.type = 'checkbox';
+              box.checked = !!gimbal.follow; box.disabled = off;
+              box.onchange = () => send(camera, 'gimbal.follow', { on: box.checked }, `Follow ${box.checked ? 'on' : 'off'}`);
+              label.append(box, node('span', ' Follow the most prominent face'));
+              follows.append(label);
+              if (gimbal.follow) follows.append(node('span', ` · ${{ searching: 'looking for someone', following: gimbal.follow.hands_on ? 'paused while you aim' : 'following', lost: 'lost them; still', no_picture: 'no picture to follow by: start the camera' }[gimbal.follow.state] || gimbal.follow.state}`));
+              turn.append(follows, node('small', 'The phone turns the gimbal to keep that face a little above the middle. The arrows take over for three seconds whenever you use them.'));
+            }
           }
           // Hung upside down: the arrows are turned round. The picture is turned round on its own, under Picture & stream.
           const hung = node('p', ''), hungLabel = node('label', ''), hungBox = document.createElement('input'); hungBox.type = 'checkbox';
