@@ -1645,6 +1645,8 @@ async function refresh() {
         upkeep.append(node('small', `${storage.estimate_basis || 'No storage telemetry'}; approximate, not a safe-stop guarantee.`));
         if (Number.isFinite(storage.estimated_seconds_to_recording_stop)) card.append(node('p', `Estimated time until recording safety stop: ${duration(storage.estimated_seconds_to_recording_stop)}`));
         if (t.capabilities) upkeep.append(node('small', `Remote arm/reboot: ${t.capabilities.device_owner ? 'available (device owner)' : 'unavailable until the phone is set up as device owner'}`));
+        // On the camera Wi-Fi but unable to reach this computer, the phone dropped and rejoined it (in the last hour).
+        if (camera.wifi_rejoined) { const line = node('p', camera.wifi_rejoined); line.className = 'app-version'; upkeep.append(line); }
         // No cooler found yet (none, or not heard): a quiet line here, and a way to look again, instead of a card section.
         if (t.capabilities?.cooler && !camera.cooler && t.cooler) {
           const c = t.cooler, last = c.last_look;
@@ -1744,12 +1746,16 @@ async function refresh() {
         if (gimbal.summary) { const line = node('p', gimbal.summary); line.className = gimbal.address && !gimbal.connected ? 'app-version recording-warning' : 'app-version'; card.append(line); }
         if (gimbal.address) {
           if (gimbal.connected) {
-            const pad = node('div', ''); pad.className = 'aim-pad';
+            // An MT3's AI tracker steers it too while it tracks: the arrows still work, but say they will fight it.
+            const tracking = gimbal.ai_tracker === 'tracking', fighting = tracking ? ' — the AI tracker is steering it too' : '';
+            if (tracking) { const warn = node('p', 'The gimbal’s AI tracker is following someone, so the arrows will fight it. Pause or stop tracking at the gimbal (the trigger) to aim by hand.'); warn.className = 'recording-warning'; turn.append(warn); }
+            else if (gimbal.ai_tracker) turn.append(node('small', `AI tracker: ${{ ready: 'ready', starting: 'starting' }[gimbal.ai_tracker] || `in a state not yet known (${gimbal.ai_tracker})`}. It is started and stopped at the gimbal (a gesture or the trigger).`));
+            const pad = node('div', ''); pad.className = tracking ? 'aim-pad tracking' : 'aim-pad';
             const stop = node('button', '■'); stop.title = 'Stop'; stop.setAttribute('aria-label', 'Stop the gimbal'); stop.disabled = !camera.online;
             stop.onclick = () => { aimStop(); aimSend(camera.id, 'gimbal.stop', {}); };
-            pad.append(node('span', ''), aimButton(camera, '▲', 'Tilt up (hold)', 0, 1, off), node('span', ''),
-              aimButton(camera, '◀', 'Pan left (hold)', -1, 0, off), stop, aimButton(camera, '▶', 'Pan right (hold)', 1, 0, off),
-              node('span', ''), aimButton(camera, '▼', 'Tilt down (hold)', 0, -1, off), node('span', ''));
+            pad.append(node('span', ''), aimButton(camera, '▲', `Tilt up (hold)${fighting}`, 0, 1, off), node('span', ''),
+              aimButton(camera, '◀', `Pan left (hold)${fighting}`, -1, 0, off), stop, aimButton(camera, '▶', `Pan right (hold)${fighting}`, 1, 0, off),
+              node('span', ''), aimButton(camera, '▼', `Tilt down (hold)${fighting}`, 0, -1, off), node('span', ''));
             const speed = document.createElement('select'); speed.setAttribute('aria-label', 'Gimbal speed');
             for (const [text, value] of [['Slow', 20], ['Medium', 50], ['Fast', 100]]) { const option = node('option', text); option.value = value; option.selected = (aimSpeeds.get(camera.id) || 50) === value; speed.append(option); }
             speed.onchange = () => aimSpeeds.set(camera.id, Number(speed.value));
@@ -1763,7 +1769,7 @@ async function refresh() {
           hungLabel.append(hungBox, node('span', ' Mounted upside down (hanging)'));
           hung.append(hungLabel);
           turn.append(hung, node('small', 'Turns both arrows round, so they still go the way they point. To turn the picture itself, see Picture & stream.'));
-          // Right on an X3 as it comes; for a gimbal that turns another way, put right here once, for this phone.
+          // Right on an X3 or MT3 as it comes; for a gimbal that turns another way, put right here once, for this phone.
           const axes = node('p', 'If it turns the wrong way: ');
           for (const [key, text] of [['swap', 'swap pan and tilt'], ['invert_pan', 'reverse pan'], ['invert_tilt', 'reverse tilt']]) {
             const label = node('label', ''), box = document.createElement('input'); box.type = 'checkbox'; box.checked = gimbal[key]; box.disabled = off;
