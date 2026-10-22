@@ -32,7 +32,7 @@ const PARTS = {
   '/recipe': ['#recipe'],
   '/cameras': ['#studio', '#bands', '#cameras'],
   '/colour': ['#colour'],
-  '/director': ['#ai-setup', '#director-settings', '#face-blur', '#obs-sync'],
+  '/director': ['#ai-setup', '#director-settings', '#voice-shots', '#face-blur', '#obs-sync'],
   '/recordings': ['#recordings-tabs', '#pc-recordings', '#relay'],
   '/system': ['#system-tabs', '#devices-setup', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#manager-update', '#decoding', '#face-blur-system'],
 };
@@ -1410,6 +1410,8 @@ async function refresh() {
         const people = node('small', 'Particular performers, and stars: '); const go = document.createElement('a'); go.href = '/people'; go.textContent = 'reference pictures and who this camera follows (People)';
         people.append(go); shots.append(people);
       }
+      // Voice shot calls: what the host can say to put this camera on air (voice.js).
+      if (camera && window.voiceCard) window.voiceCard(camera, shots);
       if (camera && director && director.event_mode?.mode !== 'creator') {
         // What this camera is there to show: the model rates it by whether that performer is playing in its picture, and the zoom looks for them.
         const direct = async body => { try { await api('/api/director', { method: 'POST', body: JSON.stringify(body) }); } catch (error) { result.textContent = error.message; } refresh(); };

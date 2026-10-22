@@ -367,6 +367,9 @@
     }
     if (!r.recipe) return refused('No recipe is loaded', 409);
     const t = now(), entry = { at: t, text: String(body.say).slice(0, 240), sure: 1, typed: true, did: null, why: null }, reasons = [];
+    const shot = shotCall(entry.text, entry);
+    if (entry.did) { v.heard.unshift(entry); v.heard = v.heard.slice(0, 10); save(); return answer({ ...recipeRead(), said: entry }); }
+    if (shot) reasons.push(shot);
     S.lastCue = S.lastCue || {};
     const rest = { recipe: 20, step: 4, next: 8, back: 8, ingredient: 5 };
     for (const cue of cues(normal(body.say))) {
@@ -392,6 +395,80 @@
     v.heard.unshift(entry); v.heard = v.heard.slice(0, 10);
     save(); return answer({ ...recipeRead(), said: entry });
   }
+  // ---- voice shot calls (voicecalls.py): a camera's shot said aloud puts it on air; "Try a phrase" stands in for the host --
+  // The phrases each camera answers to are the manager's own, as recorded for each kind of event; the matching is
+  // voicecalls.match's, a little simplified: a call word before the phrase, or the phrase said alone; not denied, not a question.
+  const mode = () => S.answers['/api/event-mode']?.mode;
+  function voiceRead() {
+    const recorded = (S.kinds[mode()] || {})['/api/voice'] || S.answers['/api/voice'];
+    if (!recorded) return null;
+    const v = S.voice = S.voice || { on: {}, phrases: {}, min: null }, shots = copy(recorded.shots), m = shots.mode;
+    if (m in v.on) { shots.on = v.on[m] === null ? shots.default : v.on[m]; shots.set = v.on[m] !== null; }
+    if (v.min) shots.min_confidence = v.min;
+    shots.cameras.forEach(c => {
+      if (!(c.id in v.phrases)) return;
+      c.phrases = [...v.phrases[c.id].map(p => ({ phrase: p, source: 'own', shared: false })), ...c.phrases.filter(p => p.source !== 'own' && !v.phrases[c.id].some(o => o.toLowerCase() === p.phrase.toLowerCase()))];
+    });
+    const cue = R()?.voice;
+    const heard = (cue ? cue.heard : S.voiceHeard || []).map(e => ({ ...e, ago: Math.round(now() - e.at) }));
+    return { ...recorded, ...(cue ? { enabled: cue.enabled, device: cue.device, source: cue.source, model: cue.model } : {}), listening: !!(cue ? cue.enabled : recorded.enabled) && (shots.on || mode() === 'cooking'), shots, heard };
+  }
+  const LEAD = /\b(?:(?:cut|cutting|switch|switching|go|going|jump|change|move|take|let's go|lets go|let's cut|let's switch)\s+(?:back\s+|over\s+|across\s+)?to|over\s+to|back\s+to|show(?:ing)?(?:\s+(?:me|us|them|you|everyone))?|let's\s+see|lets\s+see|let's\s+look\s+at|give\s+(?:me|us)|camera\s+on|bring\s+up)\s+(?:the\s+|that\s+|our\s+|my\s+|this\s+)?$/;
+  const FILLER = new Set(['the', 'a', 'shot', 'camera', 'cam', 'angle', 'view', 'please', 'now', 'okay', 'ok', 'and', 'so', 'right', 'go', 'on', 'over', 'there', 'thanks']);
+  const TAIL = new Set(['shot', 'camera', 'cam', 'angle', 'view', 'please', 'now', 'for', 'a', 'sec', 'second', 'moment', 'bit', 'again', 'here', 'there', 'thanks']);
+  const NUMBERS = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9' };
+  const plainWords = text => String(text).toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9'\s-]/g, ' ').replace(/-/g, ' ').split(/\s+/).filter(Boolean).map(w => NUMBERS[w] || w);
+  const one = w => (w.length > 3 && !/(ss|us|is)$/.test(w) && w.endsWith('s') ? w.slice(0, -1) : w);
+  function shotMatch(text, shots) {
+    const plain = plainWords(text), heard = plain.map(one), calls = [];
+    for (const camera of shots.cameras) for (const p of camera.phrases) {
+      if (p.shared) continue;
+      const wanted = plainWords(p.phrase).filter(w => !['the', 'a', 'an'].includes(w)).map(one); if (!wanted.length) continue;
+      for (let start = 0; start + wanted.length <= heard.length; start++) {
+        if (wanted.some((w, i) => heard[start + i] !== w)) continue;
+        const before = plain.slice(0, start).join(' '), end = start + wanted.length, lead = before ? `${before} `.match(LEAD) : null;
+        const bare = !lead && plain.slice(0, start).every(w => FILLER.has(w)) && plain.slice(end).every(w => TAIL.has(w));
+        if (!lead && !bare) continue;
+        if (lead && /\b(?:not|don't|dont|never|won't|wont|can't|cannot|shouldn't|didn't)\s*$/.test(before.slice(0, lead.index).trim().split(' ').slice(-2).join(' '))) continue;
+        calls.push({ id: camera.id, name: camera.name, phrase: p.phrase, score: lead ? 1 : 0.85, length: wanted.length, own: p.source === 'own' });
+      }
+    }
+    if (!calls.length) return { why: shots.cameras.some(c => c.phrases.some(p => plainWords(p.phrase).every(w => heard.includes(one(w))))) ? 'a camera named in passing, not called' : null };
+    if (/\?\s*$|^(?:should|shall|could|can|would|will|do|does|is|are|what|why|how|when|where|which|who)\b/i.test(text.trim())) return { why: 'a question, not a call' };
+    calls.sort((a, b) => b.length - a.length || b.own - a.own); return calls[0];
+  }
+  // A phrase as the manager's Speech.hear takes it: a camera called first; null when it called none (the recipe's cues then).
+  function shotCall(text, entry) {
+    const state = voiceRead(); if (!state || !state.shots.on) return null;
+    const call = shotMatch(text, state.shots), t = now(), d = director();
+    if (!call.id) return call.why;
+    if (call.score < state.shots.min_confidence) return `not sure enough of “${call.phrase}” for ${call.name} (${call.score.toFixed(2)} of ${state.shots.min_confidence.toFixed(2)} needed)`;
+    if (!d.usable.includes(call.id)) return `heard ${call.name}, but it has no picture to show (not streaming)`;
+    const hold = Number(d.hold_seconds || state.shots.hold_seconds || 30);
+    if (d.on_air === call.id && !d.pair) entry.did = `kept ${call.name} on air for another ${Math.round(hold)} s`;
+    else { cutTo(call.id, true); entry.did = `cut to ${call.name}; the director holds it ${Math.round(hold)} s`; }
+    d.hold_until = t + hold; entry.kind = 'shot';
+    if (chat()) said('director', `Heard “${text.slice(0, 120)}”: ${entry.did}.`, { system: true, voice: true });
+    return '';
+  }
+  function voiceShotPost(body) {
+    const cue = R()?.voice, v = S.voice = S.voice || { on: {}, phrases: {}, min: null };
+    if ('say' in body) {
+      const text = String(body.say || '').split(/\s+/).join(' ').trim().slice(0, 240); if (!text) return refused('say a phrase, 240 characters at most');
+      const entry = { at: now(), text, sure: 1, typed: true, did: null, why: null };
+      const why = shotCall(text, entry);
+      if (!entry.did) entry.why = why || 'no camera called';
+      const list = cue ? cue.heard : (S.voiceHeard = S.voiceHeard || []); list.unshift(entry); list.splice(10);
+      save(); return answer({ ...voiceRead(), said: entry });
+    }
+    if (typeof body.listen === 'boolean' && cue) cue.enabled = body.listen;
+    if ('on' in body) v.on[mode()] = body.on;
+    for (const [id, list] of Object.entries(body.phrases || {})) v.phrases[id] = [...new Set((list || []).map(p => String(p).split(/\s+/).join(' ').trim()).filter(Boolean))].slice(0, 8);
+    if (typeof body.min_confidence === 'number') v.min = body.min_confidence;
+    if (cue && typeof body.device === 'string') { cue.device = body.device.trim(); cue.source = cue.device || 'BlackHole 2ch'; }
+    if (cue && body.model) cue.model = body.model;
+    save(); return answer(voiceRead());
+  }
   // On the programme monitor, what the overlay would lay over the programme now.
   function overlayNow() {
     const c = S.cook, r = R(); if (!c || !r?.recipe || !cooking()) return [];
@@ -414,6 +491,7 @@
     }
     if (path === '/api/scene-chat' && a[path]) { chatActive(); return a[path]; }
     if (path === '/api/recipe' && a[path]) return recipeRead();
+    if (path === '/api/voice') return voiceRead();
     if (path in a) return a[path];
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
@@ -603,6 +681,7 @@
     if (path === '/api/director') return directorPost(body);
     if (path === '/api/event-mode') return kindPost(body);
     if (path === '/api/scene-chat') return chatPost(body);
+    if (path === '/api/voice') return voiceShotPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
     const moved = path.match(/^\/api\/cameras\/([^/]+)\/accessory$/); if (moved) return accessoryPost(decodeURIComponent(moved[1]), body);
     const named = path.match(/^\/api\/cameras\/([^/]+)\/name$/); if (named) return renamePost(decodeURIComponent(named[1]), body);

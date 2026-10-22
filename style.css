@@ -256,5 +256,8 @@ details.recipe-more[open] { display:block; width:100%; } details.recipe-more[ope
 .recipe-cues label { margin:4px 0 !important; }
 .recipe-heard ul { list-style:none; margin:4px 0; padding:0; display:grid; gap:6px; } .recipe-heard li { padding:6px 10px; border-radius:6px; background:#18232d; border-left:3px solid #547087; }
 .recipe-heard li.did { border-left-color:#6fcf97; } .recipe-heard li.did span { color:#bfe8cf; } .recipe-heard li.ignored span { color:#b7c6d4; }
+.voice-cameras ul { list-style:none; margin:4px 0; padding:0; display:grid; gap:8px; } .voice-cameras li { padding:6px 10px; border-radius:6px; background:#18232d; }
+.voice-phrase { display:inline-block; padding:1px 8px; margin:2px 0; border-radius:10px; background:#25394a; color:#d7e3ec; font-size:.9em; } .voice-phrase.shared { text-decoration:line-through; color:#8fa3b3; }
+#voice-shots { margin:18px 0; padding:12px 16px; background:#1e2c39; border-radius:12px; } #voice-shots > p { color:#b7c6d4; } #voice-shots label { display:block; margin:6px 0; } #voice-shots small { display:block; }
 .recipe-heard q { color:#eef4f8; } .recipe-heard small { display:inline !important; } .recipe-heard h4 { margin:10px 0 4px; }
 @media (max-width: 700px) { .recipe-step { padding:8px 10px; } .recipe-now-line { font-size:1rem; } }
