@@ -1776,7 +1776,7 @@ async function refresh() {
           turn.append(other);
           const forget = node('button', 'Forget this gimbal'); forget.disabled = off;
           forget.onclick = async () => { if (await concert.sure(`${camera.name}: forget its gimbal? The phone lets go of it until one is chosen again.`, { ok: 'Forget' })) set({ address: '' }, 'Forget gimbal'); };
-          turn.append(axes, node('p', `${gimbal.name || 'Gimbal'} ${gimbal.address}`), forget);
+          turn.append(axes, node('p', `${gimbal.model ? `Hohem ${gimbal.model} · ` : ''}${gimbal.name || 'Gimbal'} ${gimbal.address}`), forget);
         }
         if (gimbal.nearby.length) {
           turn.append(node('p', gimbal.address ? 'Other gimbals nearby:' : 'Several gimbals are nearby. Which one holds this phone?'));
