@@ -1,13 +1,14 @@
 'use strict';
 // Face blur (faceblur.py), on the Director page: the administrator's only. EXPERIMENTAL: hidden, and nothing blurred,
 // until switched on in System › This PC (the switch is drawn here too). Then every face, or everyone but consenting
-// performers, for the show and camera by camera; margin, strength, the fail-safe, and recordings.
+// performers, for the show and camera by camera; margin, strength, the fail-safe, and recordings. And, camera by camera,
+// every face blurred on the phone itself, before anything is recorded or sent (blurred for good).
 // Uses app.js's api(), node(), editing(), part, systemTab, role and csrf; nav.js's concert.sure().
 (() => {
   const panel = document.querySelector('#face-blur'), system = document.querySelector('#face-blur-system');
   if (!panel) return;
   let state = null, said = '', busy = false, drawn = '', switchDrawn = '';
-  const statuses = {};                 // camera id -> its status line, updated in place between rebuilds
+  const statuses = {}, phoneStatuses = {};   // camera id -> its status lines (here, on the phone), updated in place between rebuilds
   const body = node('div', ''), message = node('p', '');
   const heading = node('h2', 'Face blur '), badge = node('span', 'Experimental'); badge.className = 'badge warn'; heading.append(badge); heading.hidden = true;
   panel.append(heading, body, message);
@@ -29,11 +30,24 @@
   const modeName = id => state.modes.find(m => m.id === id)?.name || id;
 
   function cameraLine(camera) {
-    const own = state.own[camera.id], now = state.cameras[camera.id] || { mode: 'off' };
+    const own = state.own[camera.id], phone = (state.phones || {})[camera.id];
     const line = node('li', '');
     const options = [['', `As the show (${modeName(state.mode).toLowerCase()})`], ...state.modes.map(m => [m.id, m.name])];
-    line.append(node('strong', `${camera.name} `), select(options, own || '', v => change({ cameras: { [camera.id]: v || null } }), `Face blur for ${camera.name}`));
+    const here = select(options, own || '', v => change({ cameras: { [camera.id]: v || null } }), `Face blur for ${camera.name}`);
+    if (phone === 'phone') { here.disabled = true; here.title = 'Blurred on the phone only: nothing is done here.'; }
+    line.append(node('strong', `${camera.name} `), here);
     statuses[camera.id] = node('small', ''); line.append(statuses[camera.id]); status(camera.id);
+    // On the phone: every face, before anything leaves it. Switching it on is asked about, since it cannot be undone
+    // for what is recorded meanwhile.
+    const phoneOptions = [['', 'Not on the phone'], ...(state.phone_choices || []).map(c => [c.id, `${c.name}: every face, blurred for good`])];
+    const onPhone = select(phoneOptions, phone || '', async v => {
+      if (v && !phone && !await concert.sure(`Blur every face on ${camera.name}'s phone?\n\n${state.permanent}`, { ok: 'Blur on the phone' })) { drawn = ''; paint(); return; }
+      change({ phones: { [camera.id]: v || null } });
+    }, `Face blur on ${camera.name}'s phone`);
+    const phoneLine = node('div', ''); phoneLine.append(node('span', 'On the phone: '), onPhone);
+    phoneStatuses[camera.id] = node('small', ''); phoneLine.append(phoneStatuses[camera.id]);
+    if (phone) { const warning = node('p', 'Recordings on the phone, camera files and the stream are blurred for good: no unblurred copy is kept anywhere.'); warning.className = 'recording-warning'; phoneLine.append(warning); }
+    line.append(phoneLine);
     return line;
   }
   function status(id) {
@@ -44,8 +58,13 @@
     else if (now.blind) text = `${state.failsafe === 'off' ? 'faces may show unblurred' : state.failsafe === 'off_air' ? 'kept off air and blurred whole' : 'whole picture blurred'} for ${Math.round(now.blind_seconds)} s: ${now.why}`;
     else if (now.why) text = now.why;
     else text = `${now.looks_per_second} looks a second${now.ahead_seconds != null ? `, ${now.ahead_seconds.toFixed(1)} s ahead of OBS` : ''}${now.detect_ms != null ? `, ${Math.round(now.detect_ms)} ms to find faces (at most ${Math.round(now.detect_ms_most)})` : ''}, ${now.faces ?? 0} face${now.faces === 1 ? '' : 's'} now${now.decoder ? `, ${now.decoder === 'processor' ? 'decoded on the processor' : `decoded by ${now.decoder}`}` : ''}${now.in_obs ? '' : ' · not in OBS yet'}`;
-    line.textContent = text ? ` ${text}` : '';
+    line.textContent = text ? ` ${text}` : now.phone === 'phone' ? ' nothing here: the phone blurs it' : '';
     line.className = now.mode !== 'off' && (now.blind || (now.why && !now.looks_per_second)) ? 'recording-warning' : '';
+    const phoneLine = phoneStatuses[id];
+    if (!phoneLine) return;
+    const said = now.phone_state;
+    phoneLine.textContent = now.phone ? ` ${now.phone_check || 'not heard from yet'}` : '';
+    phoneLine.className = now.phone && (!said || ['failsafe', 'unavailable'].includes(said.state)) ? 'recording-warning' : '';
   }
 
   function paint() {
@@ -75,7 +94,7 @@
     }
     const list = node('ul', ''); list.className = 'face-blur-cameras';
     for (const camera of state.cameras_list) list.append(cameraLine(camera));
-    body.append(node('h3', 'Camera by camera'), node('small', 'Experimental, on every camera: it may miss faces.'), list);
+    body.append(node('h3', 'Camera by camera'), node('small', 'Experimental, on every camera: it may miss faces. “On the phone” blurs every face on the camera itself, before anything is recorded or sent, for a camera whose picture must never leave it unblurred; the look and the fail-safe below apply there too.'), list);
     body.append(node('h3', 'How'));
     const margin = document.createElement('input'); margin.type = 'number'; margin.min = 0; margin.max = 150; margin.step = 5; margin.value = Math.round(state.margin * 100); margin.size = 4; margin.disabled = busy;
     margin.setAttribute('aria-label', 'Margin round each face, percent of the face');
@@ -101,7 +120,7 @@
     body.append(detector);
     if (state.detector_kind === 'vision') body.append(node('small', 'Download YuNet in AI assistance above to find small faces too: Vision misses faces smaller than about a twentieth of the picture’s height.'));
     if (state.obs_problem) { const trouble = node('p', `OBS: ${state.obs_problem}`); trouble.className = 'recording-warning'; body.append(trouble); }
-    const off = state.mode === 'off' && !Object.values(state.own).some(m => m !== 'off');
+    const off = state.mode === 'off' && !Object.values(state.own).some(m => m !== 'off') && !Object.values(state.phones || {}).some(m => m === 'both');
     if (off) {
       const remove = node('button', 'Take face blur out of OBS'); remove.disabled = busy;
       remove.title = 'Removes the scenes face blur made in OBS and its layer from every scene. It makes them again when face blur is next on.';
