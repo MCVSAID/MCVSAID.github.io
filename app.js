@@ -274,7 +274,7 @@ async function updateCamera(camera, release, stopCapture) {
 let updatingAll = false;
 // Actions that apply to every camera at once. Each lists exactly which cameras it will touch
 // and which it will leave alone, and does nothing until the operator accepts.
-let fleetBusy = false, fleetNote = '';
+let fleetBusy = false, fleetNote = '', coolerJob = null;
 const armedNow = c => c.online && c.telemetry?.armed === true;
 const streamingNow = c => !!(c.telemetry?.streaming || c.telemetry?.capture?.streamRequested);
 // Only a phone still on app 0.7.6 that was armed on its own screen starts a recording along with its stream.
@@ -1202,6 +1202,37 @@ async function refresh() {
       }
       const online = cameras.filter(c => c.online);
       fleet.append(node('p', fleetBusy ? (fleetNote || 'Working…') : `${online.length} of ${cameras.length} cameras online · armed ${online.filter(armedNow).length} · streaming ${online.filter(streamingNow).length} · recording ${online.filter(c => c.telemetry?.recording).length}`));
+      // Coolers, all at once: forget them all, or let every phone go of its own and give each cooler to the phone that hears
+      // it loudest (the one it is clamped to). The work is the manager's; this shows how it goes and what it did.
+      const cooled = cameras.filter(c => c.telemetry?.capabilities?.cooler);
+      if (role === 'admin' && cooled.length) {
+        try { coolerJob = await api('/api/coolers/job'); } catch (error) { /* the last one known stands */ }
+        const running = coolerJob?.state === 'running';
+        const row = node('div', ''); row.className = 'fleet-row coolers'; row.setAttribute('role', 'group'); row.setAttribute('aria-label', 'Coolers on every camera');
+        row.append(node('span', 'Coolers'));
+        const start = async (action, question) => {
+          if (!await concert.sure(question, { ok: action === 'repair' ? 'Re-pair' : 'Forget all', danger: action === 'forget' })) return;
+          try { coolerJob = await api(`/api/coolers/${action}`, { method: 'POST', body: '{}' }); } catch (error) { result.textContent = error.message; }
+          refresh();
+        };
+        const repair = node('button', 'Re-pair all coolers'); repair.disabled = running;
+        repair.title = 'Every phone lets go of its cooler and looks for 10 s; each cooler then goes to the phone that hears it loudest. Phones streaming or recording keep theirs.';
+        repair.onclick = () => start('repair', `Re-pair all coolers?\n\nEvery phone that is not streaming or recording lets go of its cooler and looks for 10 seconds. Each cooler then goes to the phone that hears it loudest, which is the one it is clamped to. It takes about half a minute.\n\nSwitch every cooler on and close the Black Shark app on the phones first.`);
+        const forget = node('button', 'Forget all coolers'); forget.className = 'danger'; forget.disabled = running;
+        forget.title = 'Every phone lets go of its cooler (an offline one, when it is next connected).';
+        forget.onclick = () => start('forget', `Forget all coolers?\n\nEvery phone lets go of its cooler; one that is offline does when it is next connected. A phone does not take back the cooler it let go of.`);
+        row.append(repair, forget);
+        fleet.append(row);
+        if (coolerJob?.state) {
+          const word = coolerJob.kind === 'repair' ? 'Re-pairing coolers' : 'Forgetting coolers';
+          const lines = [running ? `${word}: ${coolerJob.step || 'working'}…` : `${word}: ${coolerJob.state === 'done' ? 'done' : 'failed'}`];
+          for (const d of coolerJob.done || []) lines.push(d.cooler ? `${d.camera}: ${d.name || 'cooler'} ${d.cooler.slice(-5)} (${d.how})` : coolerJob.kind === 'repair' ? `${d.camera}: no cooler heard` : `${d.camera}: let go`);
+          for (const s of coolerJob.skipped || []) lines.push(`Left as it was: ${s}`);
+          for (const f of coolerJob.failed || []) lines.push(`FAILED: ${f}`);
+          if (coolerJob.unclaimed?.length) lines.push(`Heard but given to no phone: ${coolerJob.unclaimed.join(', ')}`);
+          const note = node('pre', lines.join('\n')); note.className = coolerJob.failed?.length ? 'recording-warning' : 'activity done'; fleet.append(note);
+        }
+      }
       if (fleetNote && !fleetBusy) { const note = node('p', fleetNote); note.className = fleetNote.includes('FAILED') || fleetNote.includes('Not included') ? 'recording-warning' : 'activity done'; fleet.append(note); }
     }
     // The recordings on this PC: the programme, each camera's own file of it with the edit, and the colour LUTs that go with them.

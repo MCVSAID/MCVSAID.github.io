@@ -485,6 +485,7 @@
     const a = S.answers;
     if (path === '/api/stage') return { ...a['/api/stage'], director: director() };
     if (path === '/api/stage/place') return placing();
+    if (path === '/api/coolers/job') return S.coolerJob || {};
     if (path === '/api/temperatures') {
       const exact = a[`${path}?${query}`]; if (exact) return exact;
       const key = Object.keys(a).find(k => k.startsWith('/api/temperatures?')); return key ? a[key] : { cameras: [] };
@@ -495,6 +496,20 @@
     if (path in a) return a[path];
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
+  }
+  function coolersPost(kind) {
+    // Forget all, or Re-pair all: the simulated phones are already right, so re-pairing gives each its own cooler back,
+    // as the manager would from what the phones heard; forgetting clears them.
+    const done = [];
+    for (const camera of cams().cameras) {
+      const c = camera.telemetry?.cooler;
+      if (!camera.telemetry?.capabilities?.cooler || !c) continue;
+      if (kind === 'forget') { if (c.address) { done.push({ camera: camera.name, cooler: null }); for (const x of [c, camera.cooler]) if (x) x.address = null; camera.cooler = null; } }
+      else done.push(c.address ? { camera: camera.name, cooler: c.address, name: c.name, rssi: -42, how: 'heard it loudest, -42 dBm' } : { camera: camera.name, cooler: null });
+    }
+    S.coolerJob = { kind, state: 'done', step: '', done, skipped: [], failed: [], unclaimed: [] };
+    save(); note(kind === 'repair' ? 'In the demo each phone hears its own cooler loudest, so each keeps it.' : 'In the demo the coolers are let go at once.');
+    return answer(S.coolerJob);
   }
   function accessoryPost(id, body) {
     // Move here: the cooler or gimbal goes from one simulated camera's report to the other's, as the phones would say.
@@ -685,6 +700,7 @@
     if (path === '/api/scene-chat') return chatPost(body);
     if (path === '/api/voice') return voiceShotPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
+    const fleet = path.match(/^\/api\/coolers\/(forget|repair)$/); if (fleet) return coolersPost(fleet[1]);
     const moved = path.match(/^\/api\/cameras\/([^/]+)\/accessory$/); if (moved) return accessoryPost(decodeURIComponent(moved[1]), body);
     const named = path.match(/^\/api\/cameras\/([^/]+)\/name$/); if (named) return renamePost(decodeURIComponent(named[1]), body);
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
