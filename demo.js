@@ -57,6 +57,13 @@
     const reasons = ['the performer it is given is playing and well framed', 'the guitarist is to the fore in the sound', 'a wider look after a long close shot', 'the singer turned towards this camera'];
     e.recent = [...e.recent, { at: now(), kind: 'cut', title: `Cut to ${where}`, text: byHand ? 'Operator: chosen by hand' : `AI director: ${reasons[Math.floor(Math.random() * reasons.length)]}` }].slice(-8);
   }
+  // A gimbal camera's tracking, as its phone would report it: a caption when the demo's follow is switched on.
+  function explainTracking(id, on) {
+    const e = explainState(); if (!e.on || !on) return;
+    const camera = cams().cameras.find(c => c.id === id), title = `${camera?.name || 'A camera'} is tracking`;
+    if (e.recent.some(c => c.title === title && now() - c.at < 2)) return;            // the same switch seen twice
+    e.recent = [...e.recent, { at: now(), kind: 'gimbal', title, text: 'its phone keeps them in frame, steering the gimbal itself' }].slice(-8);
+  }
   function explainPost(body) {
     const e = explainState();
     if ('on' in body) { e.on = !!body.on; if (e.on) { e.recent = []; note('In the demo the captions are listed here; in a real show they are laid over the programme in OBS, and recorded with it.'); } }
@@ -686,7 +693,7 @@
       for (const g of [t.gimbal, camera.gimbal].filter(x => x && typeof x === 'object')) {
         if (what === 'gimbal.settings') for (const k of ['swap', 'invert_pan', 'invert_tilt', 'upside_down']) if (k in p) g[k] = !!p[k];
         if (what === 'gimbal.move' || what === 'gimbal.stop') g.moving = what === 'gimbal.move' && !!(p.pan || p.tilt);
-        if (what === 'gimbal.follow') g.follow = p.on ? { state: 'following', hands_on: false } : null;
+        if (what === 'gimbal.follow') { if (p.on && !g.follow) explainTracking(id, true); g.follow = p.on ? { state: 'following', hands_on: false } : null; }
         // Its angles, as the simulated phone reports them: the arrows turn them, a point takes them there.
         if (g.attitude && what === 'gimbal.move') { g.attitude.pan = Math.round(((g.attitude.pan + (p.pan || 0) * 0.27 + 540) % 360 - 180) * 10) / 10; g.attitude.tilt = Math.round(Math.max(-90, Math.min(90, g.attitude.tilt + (p.tilt || 0) * 0.27)) * 10) / 10; }
         if (g.attitude && what === 'gimbal.point') { g.attitude.pan = p.pan_deg; if ('tilt_deg' in p) g.attitude.tilt = p.tilt_deg; g.point = { state: 'arrived', pan_deg: p.pan_deg, tilt_deg: p.tilt_deg ?? null, pan_left: 0 }; }
