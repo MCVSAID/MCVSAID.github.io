@@ -1815,10 +1815,10 @@ async function refresh() {
                 }
               };
               follows.append(pick);
-              if (gimbal.follow) follows.append(node('span', ` · ${{ searching: 'looking for someone', following: gimbal.follow.hands_on ? 'paused while you aim' : 'following', lost: 'lost them; still', no_picture: 'no picture to follow by: start the camera' }[gimbal.follow.state] || gimbal.follow.state}`));
+              if (gimbal.follow) follows.append(node('span', ` · ${{ searching: 'looking for someone', following: gimbal.follow.hands_on ? 'paused while you aim' : gimbal.follow.by === 'person' ? 'following, by their body (face not seen)' : 'following', lost: 'lost them; still', no_picture: 'no picture to follow by: start the camera' }[gimbal.follow.state] || gimbal.follow.state}`));
               if (gimbal.performer) follows.append(node('span', gimbal.performer.why ? ` · ${gimbal.performer.why}` : gimbal.performer.seen_seconds != null ? ` · ${gimbal.performer.name || 'its performer'} seen ${gimbal.performer.seen_seconds} s ago` : ''));
               if (role === 'admin' && gimbal.choices === null) follows.append(node('small', ' Performers can be chosen while they are being recognised (Plus AI, People page).'));
-              turn.append(follows, node('small', 'The phone turns the gimbal to keep that face a little above the middle; for a performer, the manager recognises them about once a second and points the phone at them. The arrows take over for three seconds whenever you use them.'));
+              turn.append(follows, node('small', 'The phone turns the gimbal to keep that face a little above the middle, and keeps someone who turns away by their body (app 0.9.30); for a performer, the manager recognises them about once a second and points the phone at them. The arrows take over for three seconds whenever you use them.'));
             }
           }
           // Hung upside down: the arrows are turned round. The picture is turned round on its own, under Picture & stream.
