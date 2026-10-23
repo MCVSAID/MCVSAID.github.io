@@ -88,6 +88,15 @@
     box.append(node('small', z.built_in
       ? `Built in: ${quoted(z.phrases.filter(p => p.source === 'built in').map(p => p.phrase))}, for the camera on air. Add your own below.`
       : `${modeName(z.mode)} has no built-in zoom phrases (a lyric like “closer” would set them off): only the phrases below, so choose words nobody sings, such as “camera, close on me”.`));
+    // How quickly a called zoom glides: quick (0.6 s a step, 1 s to a close-up) or smooth (twice as long).
+    const QUICK = { tighter: 0.6, wider: 0.6, close: 1.0, normal: 1.0 }, SMOOTH = { tighter: 1.2, wider: 1.2, close: 2.0, normal: 2.0 };
+    const speedLine = node('p', ''); speedLine.className = 'recipe-load-row';
+    const speed = document.createElement('select'); speed.setAttribute('aria-label', 'How quickly a called zoom glides'); speed.disabled = busy;
+    const nowSpeed = z.seconds && z.seconds.close >= 1.5 ? 'smooth' : 'quick';
+    for (const [value, text] of [['quick', 'quick: 0.6 s a step, 1 s to a close-up (the default)'], ['smooth', 'smooth: 1.2 s a step, 2 s to a close-up']]) { const o = node('option', text); o.value = value; o.selected = value === nowSpeed; speed.append(o); }
+    speed.onchange = () => send({ zoom_seconds: speed.value === 'smooth' ? SMOOTH : QUICK }, 'Saved.');
+    speedLine.append(node('span', 'A called zoom glides: '), speed);
+    box.append(speedLine);
     const rows = zoomDraft || z.own.map(p => ({ ...p }));
     const list = node('div', '');
     rows.forEach((row, n) => {
