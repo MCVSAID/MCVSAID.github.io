@@ -1466,77 +1466,13 @@ async function refresh() {
       // Voice shot calls: what the host can say to put this camera on air (voice.js).
       if (camera && window.voiceCard) window.voiceCard(camera, shots);
       if (camera && director && director.event_mode?.mode !== 'creator') {
-        // What this camera is there to show: the model rates it by whether that performer is playing in its picture, and the zoom looks for them.
-        const direct = async body => { try { await api('/api/director', { method: 'POST', body: JSON.stringify(body) }); } catch (error) { result.textContent = error.message; } refresh(); };
-        if (camera.id === director.crowd_camera) shots.append(node('small', `This is the ${words().crowd} camera: it shows the ${words().crowd}, by its own rules.`));
-        else {
-          // What it shows: eight places, each a list of instruments (or, in another kind of event, roles). "Other" lets one be typed in that is not on the list.
-          const shows = node('div', 'Shows'), given = director.camera_focus?.[camera.id] || [];
-          const label = key => (director.instruments || []).find(i => i[0] === key)?.[1] || director.role_names?.[key] || (key.startsWith('custom:') ? key.slice(7) : key);
-          const places = node('div', ''); places.className = 'instrument-places';
-          const set = (place, value) => {
-            const next = [...given]; if (value) next[Math.min(place, next.length)] = value; else next.splice(place, 1);
-            direct({ camera_focus: { [camera.id]: [...new Set(next.filter(Boolean))] } });
-          };
-          for (let place = 0; place < 8; place++) {
-            const pick = document.createElement('select'), here = given[place] || ''; pick.setAttribute('aria-label', `${capital(words().role)} ${place + 1}`);
-            pick.disabled = place > given.length;                    // filled in order: the next empty place is the one to use
-            const offered = (director.instruments || []).filter(i => i[0] === here || !given.includes(i[0]));
-            if (here && !here.startsWith('custom:') && !offered.some(i => i[0] === here)) offered.push([here, label(here)]);     // given in another kind of event: kept
-            const choices = [['', place === 0 && !given.length ? words().anyone : here ? 'remove' : '—'], ...offered];
-            if (here.startsWith('custom:')) choices.push([here, label(here)]);
-            choices.push(['other', 'other: type a name…']);
-            for (const [value, text] of choices) { const option = document.createElement('option'); option.value = value; option.textContent = text; option.selected = value === here; pick.append(option); }
-            pick.onchange = async () => {
-              if (pick.value !== 'other') { set(place, pick.value); return; }
-              const got = await concert.ask({ title: `Another ${words().role}`, fields: [{ name: 'name', label: `Name of the ${words().role} this camera shows (for example: ${words().example})` }], ok: 'Use it' });
-              const typed = (got?.name || '').trim().replace(/\s+/g, ' ');
-              if (!typed) { pick.value = here; return; }
-              if (typed.length > 30 || !/^[\p{L}\p{N} '&/+.-]+$/u.test(typed) || !/\p{L}/u.test(typed)) { result.textContent = `A name of ${words().role === 'instrument' ? 'an instrument' : 'a ' + words().role} is letters and digits, 30 characters at most.`; pick.value = here; return; }
-              set(place, `custom:${typed}`);
-            };
-            places.append(pick);
-          }
-          shows.append(places);
-          if (given.some(key => key.startsWith('custom:'))) shows.append(node('small', words().named ? words().named : director.event_mode?.music === false ? `A ${words().role} you named is looked for in the picture; give the camera its microphone to have it chosen when that person talks.` : 'An instrument you named is looked for in the picture, but cannot be listened for: solos are only heard for instruments on the list.'));
-          const isWide = given.some(key => (director.wide_roles || ['band']).includes(key)) || given.length > 2;
-          if (isWide) shows.append(node('small', 'A wide camera: shown whole, never zoomed in, and favoured when the whole group has the moment.'));
-          const solo = node('label', 'During a solo, zoom in on '), soloPick = document.createElement('select'); soloPick.disabled = !director.zoom || !given.length || isWide;
-          const chosen = director.camera_solo_focus?.[camera.id] ?? (director.solo_focus || '');
-          for (const [value, text] of [['', 'the same as usual'], ['face_hands', 'the face and hands together'], ['hands', 'the hands'], ['face', 'the face'], ['chest', 'head and chest'], ['waist', 'head to waist'], ['person', 'the whole person']]) { const option = document.createElement('option'); option.value = value; option.textContent = text; option.selected = chosen === value; soloPick.append(option); }
-          soloPick.onchange = () => direct({ camera_solo_focus: { [camera.id]: soloPick.value } });
-          solo.append(soloPick);
-          shows.className = solo.className = 'card-setting';
-          shots.append(shows);
-          if (director.event_mode?.music !== false) shots.append(solo);           // no music, no solos
-          if (director.talk && director.event_mode?.speaking) {
-            // Its person's microphone on the mixer: the camera is chosen while they talk into it.
-            const mic = node('label', 'Microphone on the mixer '), micPick = document.createElement('select'), own = director.talk.mics?.[camera.id] || '';
-            for (const [value, text] of [['', 'none'], ...Array.from({ length: 16 }, (_, n) => [n + 1, `channel ${n + 1}`])]) { const option = document.createElement('option'); option.value = value; option.textContent = text; option.selected = String(own) === String(value); micPick.append(option); }
-            micPick.onchange = () => direct({ talk: { mics: { [camera.id]: micPick.value ? Number(micPick.value) : null } } });
-            mic.append(micPick); mic.className = 'card-setting'; shots.append(mic);
-          }
-          // Where a camera with this role is best put (a kitchen's: overhead for the board, low for the oven).
-          for (const key of given) if (director.event_mode?.places?.[key]) shows.append(node('small', `${label(key)}: ${director.event_mode.places[key]}`));
-          if (!given.length) shots.append(node('small', words().give ? words().give : director.event_mode?.music === false ? `Give it a ${words().role} so the model knows whom it shows.` : director.event_mode?.mode && director.event_mode.mode !== 'concert' ? 'Give it a role or an instrument so the model knows whom it shows, and solos favour it.' : 'Give it an instrument to have solos on that instrument favour this camera.'));
-          // The folded group says what is set, so it need not be opened to know.
-          shots.querySelector('summary').append(node('span', ` · ${given.length ? given.map(label).join(', ') : words().anyone}`));
-          // Its telephoto, for tight shots: changed only while the camera is off air, and held out of the choosing until the new picture is in OBS.
-          const lens = director.lenses?.[camera.id];
-          if (lens?.telephoto) {
-            const tele = node('label', ''), teleBox = document.createElement('input'); teleBox.type = 'checkbox'; teleBox.checked = lens.allowed; teleBox.disabled = !director.zoom || isWide;
-            teleBox.onchange = () => direct({ camera_telephoto: { [camera.id]: teleBox.checked } });
-            tele.append(teleBox, node('span', ` Use its ${lens.telephoto.replace(/ only$/, '')} lens for tight shots (changed only while off air)`));
-            tele.className = 'card-setting'; shots.append(tele);
-          }
-          if (lens) {
-            const said = lens.changing ? `changing to ${lens.changing.to} (${lens.changing.seconds} s): not chosen until its picture is in OBS` : lens.failed ? `the telephoto did not work: ${lens.failed}` : lens.by_director && lens.reason ? lens.reason : '';
-            const tag = node('p', `Lens: ${lens.lens}${lens.by_director ? ', chosen by the director' : ''}${said ? ` · ${said}` : ''}`);
-            tag.className = lens.failed ? 'app-version recording-warning' : 'app-version';
-            // A lens that is changing or failed matters now; otherwise it is detail.
-            (lens.changing || lens.failed ? card : shots).append(tag);
-          }
-        }
+        // What this camera is there to show (shows.js, shared with the Operate page so both are the same setting).
+        const made = window.whatItShows.build(camera, director, { words, ask: dialog => concert.ask(dialog), tell: message => { result.textContent = message; },
+          direct: async body => { try { await api('/api/director', { method: 'POST', body: JSON.stringify(body) }); } catch (error) { result.textContent = error.message; } refresh(); } });
+        shots.append(...made.element.childNodes);
+        // The folded group says what is set, so it need not be opened to know.
+        shots.querySelector('summary').append(node('span', ` · ${made.summary}`));
+        if (made.urgent) card.append(made.urgent);
       }
       if (camera) {
         const t = camera.telemetry || {};
@@ -1791,6 +1727,9 @@ async function refresh() {
         }
         chill.append(node('small', ' Power the cooler from a USB charger, not from the camera switch. Close the Black Shark app on the phone: it holds the cooler while it is open.'));
       }
+      // Which lens makes the picture now, and the zoom: the phone's own report each frame with app 0.9.38, which hands
+      // over between lenses as it zooms; before that, the lens chosen.
+      if (camera?.lens_now) { const lensLine = node('p', ''); lensLine.className = 'app-version'; lensLine.append(window.lensChip(camera.lens_now)); card.append(lensLine); }
       // A Hohem gimbal holding the phone: hold an arrow to turn it. Nothing for a phone without one.
       const turn = fold(`${key}:gimbal`, 'Gimbal');
       if (camera?.gimbal) {

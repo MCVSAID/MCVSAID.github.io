@@ -118,7 +118,7 @@
     for (const entry of v.heard) {
       const li = document.createElement('li'); li.className = entry.did ? 'did' : 'ignored';
       const ago = entry.ago + (Date.now() - fetchedAt) / 1000;
-      li.append(node('q', entry.text), node('small', ` ${entry.typed ? 'typed' : `${Math.round(entry.sure * 100)}% sure`}, ${clock(ago)} ago`), node('br', ''), node('span', entry.did ? `→ ${entry.did}` : `→ nothing: ${entry.why}`));
+      li.append(node('q', entry.text), node('small', ` ${entry.typed ? 'typed' : `${Math.round(entry.sure * 100)}% sure`}${entry.early ? ', while still speaking' : ''}${entry.took != null ? `, understood in ${entry.took.toFixed(1)} s` : ''}, ${clock(ago)} ago`), node('br', ''), node('span', entry.did ? `→ ${entry.did}` : `→ nothing: ${entry.why}`));
       list.append(li);
     }
     heard.append(list);

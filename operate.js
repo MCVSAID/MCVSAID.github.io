@@ -10,7 +10,7 @@ const tiles = new Map(), drives = new Map(), pads = new Map();          // camer
 const SPEEDS = [0.08, 0.15, 0.25, 0.4, 0.6];                            // aiming speed presets: the most the stick asks for
 const SPEED_WORDS = ['very slow', 'slow', 'normal', 'fast', 'very fast'];
 const COLOURS = ['#5fb4ee', '#f4a261', '#90be6d', '#f78fb3'];
-const DEAD = 0.18, ZOOM_DEAD = 0.1, EVERY_MS = 100;
+const DEAD = 0.18, ZOOM_DEAD = 0.1, EVERY_MS = 100, SOONEST_MS = 45;   // the manager takes a reading every 40 ms at most
 // A camera's live feed; the clickable demo (demo-site) gives its drawn stills instead, having no relay.
 const feed = (id, again) => window.concertDemo?.feed ? window.concertDemo.feed(id) : `/api/operate/feed/${encodeURIComponent(id)}${again ? `?t=${Date.now()}` : ''}`;
 function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
@@ -36,21 +36,33 @@ document.querySelector('#login').onsubmit = async e => {
 };
 fetch('/api/session').then(r => r.ok ? r.json() : null).then(session => { if (session) enter(session); }).catch(() => {});
 
-// Which cameras are shown: kept in this browser. At first, the cameras on a gimbal, or the first four.
+// Which cameras are shown: kept in this browser. At first, every camera in use, up to six (each shown is decoded live).
 function chosen() {
   let ids = null;
   try { ids = JSON.parse(localStorage.getItem('operate.cameras') || 'null'); } catch (error) { ids = null; }
   const usable = state.cameras.filter(c => c.in_use !== false);
-  if (!Array.isArray(ids)) ids = (usable.some(c => c.gimbal?.address) ? usable.filter(c => c.gimbal?.address) : usable.slice(0, 4)).map(c => c.id);
+  if (!Array.isArray(ids)) ids = usable.slice(0, 6).map(c => c.id);
   return usable.filter(c => ids.includes(c.id));
 }
 function choose(ids) { try { localStorage.setItem('operate.cameras', JSON.stringify(ids)); } catch (error) { /* kept for this visit only */ } draw(); }
+
+// How many live pictures a second: 24 shows a zoom or a pan smoothly, for twice the work per camera watched.
+const rate = document.querySelector('#rate');
+api('/api/operate/settings').then(s => { rate.value = String(s.rate); }).catch(() => {});
+rate.onchange = async () => {
+  const done = await act('/api/operate/settings', { rate: Number(rate.value) });
+  if (done) for (const [id, tile] of tiles) tile.querySelector('img').src = feed(id, true);
+};
 
 async function refresh() {
   try { state = await api('/api/cameras'); } catch (error) { result.textContent = error.message; return; }
   draw();
 }
 
+const showsContext = {
+  words: () => window.concert?.mode?.words || { role: 'instrument', roles: 'instruments', anyone: 'anyone performing', crowd: 'crowd', example: 'banjo, harmonica, pedal steel' },
+  ask: dialog => window.concert.ask(dialog), tell: message => { result.textContent = message; },
+  direct: async body => { await act('/api/director', body); refresh(); } };
 const followContext = camera => ({ role: window.concert?.session?.role || 'operator', off: !camera.online,
   post: (path, body) => api(path, body), send: (c, command, parameters) => send(c.id, command, parameters), refresh, tell: message => { result.textContent = message; } });
 
@@ -80,7 +92,7 @@ function draw() {
       img.onerror = () => { said.hidden = false; said.textContent = 'No live picture (is the camera streaming, and the relay on?). Trying again…'; setTimeout(() => { img.src = feed(camera.id, true); }, 3000); };
       img.src = feed(camera.id);
       picture.append(img, said);
-      tile.append(node('h2'), picture, node('p', '', 'line'), node('div', undefined, 'buttons'), node('div', undefined, 'follow'));
+      tile.append(node('h2'), picture, node('p', '', 'line'), node('div', undefined, 'buttons'), node('div', undefined, 'shows'), node('div', undefined, 'follow'));
       tile.onclick = event => { if (event.target.closest('button')) return; const index = [...drives.keys()][0]; if (index !== undefined) { drives.set(index, camera.id); draw(); } };
       feeds.append(tile); tiles.set(camera.id, tile);
     }
@@ -93,7 +105,9 @@ function draw() {
     for (const index of drivers) { const badge = node('span', `Controller ${index + 1}`, 'badge'); badge.style.background = COLOURS[index % COLOURS.length]; badge.style.color = '#101820'; heading.append(badge); }
     const t = camera.telemetry || {}, gimbal = camera.gimbal;
     const zoom = t.zoom_percent ? ` · zoom ${(t.zoom_percent / 100).toFixed(1)}×` : '';
-    tile.querySelector('.line').textContent = `${!camera.online ? 'Offline' : gimbal?.summary || (gimbal ? 'Gimbal not connected' : 'No gimbal: zoom and cut only')}${zoom}${director.gimbal_out?.[camera.id] ? ` · kept off air: ${director.gimbal_out[camera.id]}` : ''}`;
+    const line = tile.querySelector('.line');
+    line.textContent = `${!camera.online ? 'Offline' : gimbal?.summary || (gimbal ? 'Gimbal not connected' : 'No gimbal: zoom and cut only')}${camera.lens_now ? '' : zoom}${director.gimbal_out?.[camera.id] ? ` · kept off air: ${director.gimbal_out[camera.id]}` : ''}`;
+    if (camera.lens_now) line.append(' ', window.lensChip(camera.lens_now));
     const buttons = tile.querySelector('.buttons'); buttons.replaceChildren();
     const take = node('button', onAir ? 'On air' : 'Put on air'); take.disabled = onAir || !camera.online; take.onclick = () => act('/api/director', { take: camera.id }).then(refresh);
     buttons.append(take);
@@ -110,6 +124,10 @@ function draw() {
         buttons.append(home, sethome);
       }
     }
+    // What it shows: the camera card's own control (shows.js), the same setting; for every camera, gimbal or not.
+    const shows = tile.querySelector('.shows');
+    if (director.camera_focus !== undefined && director.event_mode?.mode !== 'creator') window.whatItShows.into(shows, camera, director, showsContext);
+    else { shows.replaceChildren(); delete shows.dataset.signature; }
     // Whom its gimbal follows and its follow plan: the camera card's own control (follow.js), the same setting.
     const follow = tile.querySelector('.follow');
     if (gimbal?.connected && t.capabilities?.gimbal_follow) window.gimbalFollow.into(follow, camera, followContext(camera));
@@ -175,12 +193,14 @@ function poll(time) {
     const pan = Math.round(curve(pad.axes[2] || 0) * most), tilt = Math.round(-curve(pad.axes[3] || 0) * most);
     const zoomed = (pad.buttons[7]?.value || 0) - (pad.buttons[6]?.value || 0), zoom = Math.round(squeeze(zoomed) * 100) / 100;
     const active = pan !== 0 || tilt !== 0 || zoom !== 0;
-    // Ten times a second while held; once more when let go, so the gimbal is told to stop at once.
-    if ((active && time - last.sent >= EVERY_MS) || (!active && last.active)) {
-      last.sent = time;
+    // At once when a stick or trigger is first pushed or moves clearly (no waiting for the next tenth of a second), ten
+    // times a second while held, and once more when let go, so the gimbal is told to stop at once.
+    const moved = !last.active || Math.abs(pan - (last.pan || 0)) >= 8 || Math.abs(tilt - (last.tilt || 0)) >= 8 || Math.abs(zoom - (last.zoom || 0)) >= 0.08;
+    if ((active && (time - last.sent >= EVERY_MS || (moved && time - last.sent >= SOONEST_MS))) || (!active && last.active)) {
+      last.sent = time; last.pan = pan; last.tilt = tilt; last.zoom = zoom;
       api('/api/operate/control', { camera_id: camera, pan, tilt, zoom }).catch(error => { if (!/rate limit/i.test(error.message)) result.textContent = error.message; });
     }
-    pads.set(pad.index, { buttons: pad.buttons.map(b => b.pressed), sent: last.sent, active });
+    pads.set(pad.index, { buttons: pad.buttons.map(b => b.pressed), sent: last.sent, active, pan: last.pan, tilt: last.tilt, zoom: last.zoom });
   }
 }
 window.addEventListener('gamepadconnected', () => draw());

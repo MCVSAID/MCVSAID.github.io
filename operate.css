@@ -12,6 +12,7 @@
 .feed .picture .said { position:absolute; inset:0; display:grid; place-items:center; text-align:center; padding:12px; color:#b7c6d4; }
 .feed .line { color:#b7c6d4; font-size:.9rem; margin:6px 0; min-height:1.2em; }
 .feed .buttons { display:flex; flex-wrap:wrap; gap:6px; }
+.feed .what-it-shows summary { cursor:pointer; color:#b7c6d4; margin:6px 0; } .feed .what-it-shows select { margin:2px 4px 2px 0; max-width:100%; }
 .feed .follow p { margin:6px 0; } .feed .follow select { max-width:100%; }
 .follow-plan summary { cursor:pointer; color:#b7c6d4; } .follow-rule { display:block; margin:4px 0; }
 .follow-order { margin:6px 0; padding-left:22px; } .follow-order button { padding:0 8px; }
