@@ -1775,6 +1775,9 @@ async function refresh() {
         const gimbal = camera.gimbal, off = !camera.online || busy.has(camera.id);
         const set = (parameters, label) => send(camera, 'gimbal.settings', parameters, label);
         if (gimbal.summary) { const line = node('p', gimbal.summary); line.className = gimbal.address && !gimbal.connected ? 'app-version recording-warning' : 'app-version'; card.append(line); }
+        // The director keeps a camera whose gimbal lost its person off air until it is following again (director.gimbal_out).
+        const keptOut = director?.gimbal_out?.[camera.id];
+        if (keptOut) { const kept = node('p', `Off air for now: ${keptOut}. The director cuts back once it is following again.`); kept.className = 'app-version recording-warning'; card.append(kept); }
         if (gimbal.address) {
           if (gimbal.connected) {
             // An MT3's AI tracker steers it too while it tracks: the arrows still work, but say they will fight it.
