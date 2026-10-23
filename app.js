@@ -1815,6 +1815,14 @@ async function refresh() {
                 }
               };
               follows.append(pick);
+              // How quickly (app 0.9.35): kept by the phone, sent with Follow or on its own while following.
+              if ((camera.telemetry || {}).capabilities?.gimbal_follow_pace) {
+                const pace = document.createElement('select'); pace.setAttribute('aria-label', 'How quickly the gimbal follows'); pace.disabled = off;
+                const paceNow = gimbal.follow?.pace || 'normal';
+                for (const [value, text] of [['calm', 'Calm'], ['normal', 'Normal'], ['quick', 'Quick']]) { const option = node('option', text); option.value = value; option.selected = value === paceNow; pace.append(option); }
+                pace.onchange = () => send(camera, 'gimbal.follow', { on: !!gimbal.follow, pace: pace.value }, `Follow speed: ${pace.value}`);
+                follows.append(node('span', ' Speed: '), pace);
+              }
               if (gimbal.follow) follows.append(node('span', ` · ${{ searching: 'looking for someone', following: gimbal.follow.hands_on ? 'paused while you aim' : gimbal.follow.by === 'person' ? 'following, by their body (face not seen)' : 'following', lost: 'lost them; still', no_picture: 'no picture to follow by: start the camera' }[gimbal.follow.state] || gimbal.follow.state}`));
               if (gimbal.performer) follows.append(node('span', gimbal.performer.why ? ` · ${gimbal.performer.why}` : gimbal.performer.seen_seconds != null ? ` · ${gimbal.performer.name || 'its performer'} seen ${gimbal.performer.seen_seconds} s ago` : ''));
               if (role === 'admin' && gimbal.choices === null) follows.append(node('small', ' Performers can be chosen while they are being recognised (Plus AI, People page).'));
@@ -1844,7 +1852,8 @@ async function refresh() {
           turn.append(axes, node('p', `${gimbal.model ? `Hohem ${gimbal.model} · ` : ''}${gimbal.name || 'Gimbal'} ${gimbal.address}`), forget);
         }
         if (gimbal.nearby.length) {
-          turn.append(node('p', gimbal.address ? 'Other gimbals nearby:' : 'Several gimbals are nearby. Which one holds this phone?'));
+          // A gimbal let go of here is listed again by a later look, but never taken by itself: it may be the only one.
+          turn.append(node('p', gimbal.address ? 'Other gimbals nearby:' : gimbal.nearby.length === 1 ? 'A gimbal is nearby. Is it the one holding this phone?' : 'Several gimbals are nearby. Which one holds this phone?'));
           const list = node('ul', '');
           for (const other of gimbal.nearby) {
             const item = node('li', `${other.name || 'Gimbal'} ${other.address}${other.rssi ? ` · ${other.rssi} dBm` : ''} `);

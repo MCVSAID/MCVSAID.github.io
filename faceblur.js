@@ -35,6 +35,7 @@
     const options = [['', `As the show (${modeName(state.mode).toLowerCase()})`], ...state.modes.map(m => [m.id, m.name])];
     const here = select(options, own || '', v => change({ cameras: { [camera.id]: v || null } }), `Face blur for ${camera.name}`);
     if (phone === 'phone') { here.disabled = true; here.title = 'Blurred on the phone only: nothing is done here.'; }
+    if (phone === 'both') { here.disabled = true; here.title = 'The phone blurs every face; this computer blurs every face it left showing.'; }
     line.append(node('strong', `${camera.name} `), here);
     statuses[camera.id] = node('small', ''); line.append(statuses[camera.id]); status(camera.id);
     // On the phone: every face, before anything leaves it. Switching it on is asked about, since it cannot be undone
@@ -59,12 +60,26 @@
     else if (now.why) text = now.why;
     else text = `${now.looks_per_second} looks a second${now.ahead_seconds != null ? `, ${now.ahead_seconds.toFixed(1)} s ahead of OBS` : ''}${now.detect_ms != null ? `, ${Math.round(now.detect_ms)} ms to find faces (at most ${Math.round(now.detect_ms_most)})` : ''}, ${now.faces ?? 0} face${now.faces === 1 ? '' : 's'} now${now.decoder ? `, ${now.decoder === 'processor' ? 'decoded on the processor' : `decoded by ${now.decoder}`}` : ''}${now.in_obs ? '' : ' · not in OBS yet'}`;
     line.textContent = text ? ` ${text}` : now.phone === 'phone' ? ' nothing here: the phone blurs it' : '';
+    if (now.backup && !now.blind && !now.why) line.textContent = ` Backing up the phone: ${backupWords(now.backup)}${now.in_obs ? '' : ' · not in OBS yet'}`;
     line.className = now.mode !== 'off' && (now.blind || (now.why && !now.looks_per_second)) ? 'recording-warning' : '';
     const phoneLine = phoneStatuses[id];
     if (!phoneLine) return;
     const said = now.phone_state;
     phoneLine.textContent = now.phone ? ` ${now.phone_check || 'not heard from yet'}` : '';
     phoneLine.className = now.phone && (!said || ['failsafe', 'unavailable'].includes(said.state)) ? 'recording-warning' : '';
+  }
+
+  // What the backup of a phone found (faceblur.backup): what the phone blurred, what was added here, and how often the
+  // phone left a face showing (as faceblur.backup_words says it in readiness).
+  function backupWords(b) {
+    const last = b.last_minute, all = b.since_start, misses = last.missed + last.partly;
+    const faces = n => `${n} face${n === 1 ? '' : 's'}`;
+    let text = `in the last minute the phone blurred ${faces(last.phone_faces)} in the frames looked at here; ${faces(misses)} it left showing were blurred here`;
+    if (misses && last.missed_share != null) text += ` (${Math.round(last.missed_share * 100)}% of the faces seen; ${last.caught} as they appeared${last.partly ? `, ${last.partly} partly outside its blur` : ''})`;
+    if (all.looks) text += `. Since the manager started: ${all.caught || 0} caught${all.missed_share != null ? `, the phone missed ${Math.round(all.missed_share * 100)}% of the faces` : ''}`;
+    if (!b.reports) text += '. The phone is not reporting where it blurs (app 0.9.33 does): every face found is blurred here';
+    else if (b.phone_now === 'blind') text += '. The phone is blind now: every face found is blurred here';
+    return text;
   }
 
   function paint() {
@@ -100,7 +115,7 @@
     margin.setAttribute('aria-label', 'Margin round each face, percent of the face');
     const setMargin = node('button', 'Set'); setMargin.disabled = busy; setMargin.onclick = () => change({ margin: Number(margin.value) / 100 });
     body.append(row('Margin round each face:', margin, node('span', ' % of the face '), setMargin));
-    body.append(row('Strength:', select([['strong', 'Strong (at most 4 blocks down a face)'], ['medium', 'Medium (at most 6)'], ['light', 'Light (at most 9)']], state.strength, v => change({ strength: v }), 'Strength')));
+    body.append(row('Strength:', select(state.style === 'smooth' ? [['strong', 'Strong'], ['medium', 'Medium'], ['light', 'Light']] : [['strong', 'Strong (at most 4 blocks down a face)'], ['medium', 'Medium (at most 6)'], ['light', 'Light (at most 9)']], state.strength, v => change({ strength: v }), 'Strength')));
     body.append(row('What is covered:', select([['whole', 'The whole face, and some of the head round it'], ['face', 'The face: ears, forehead, eyes, nose and chin'], ['eyes', 'Only the eyes and nose']], state.area, v => change({ area: v }), 'What is covered')));
     if (state.area === 'eyes') body.append(node('small', 'Covering only the eyes and nose hides less: people can still be recognised by their mouth, jaw, hair and voice. For anonymity, cover the whole face.'));
     if (state.area === 'face') body.append(node('small', 'The face from ear to ear and forehead to chin; hair and neck stay visible, and people can be recognised by them. For anonymity, cover the whole face and head.'));
@@ -114,7 +129,7 @@
     body.append(row('Blur the programme recording afterwards:', select(files, state.programme, v => change({ programme: v }), 'Programme recording')));
     body.append(node('small', 'Afterwards every picture is looked at, more closely than live, so faces the live blur missed are caught too. It takes about as long as the recording for each file. Exports: python -m camera_manager.blurfiles "<file>"'));
     const job = state.files_job;
-    if (job) body.append(node('p', `${job.state === 'blurring' ? 'Blurring' : job.state === 'failed' ? `Could not blur: ${job.problem}` : 'Last blurred'}: ${(job.files || []).map(f => `${f.file.split('/').pop()} ${f.state === 'blurring' ? Math.round(f.share * 100) + '%' : f.state}${f.problem ? ` (${f.problem})` : ''}`).join(' · ')}`));
+    if (job) body.append(node('p', `${job.state === 'blurring' ? 'Blurring' : job.state === 'failed' ? `Could not blur: ${job.problem}` : 'Last blurred'}: ${(job.files || []).map(f => `${f.file.split('/').pop()} ${f.state === 'blurring' ? Math.round(f.share * 100) + '%' : f.state}${f.problem ? ` (${f.problem})` : ''}${f.result && f.result.phone_blurred ? ` (blurred on the phone; ${f.result.faces} faces it left showing found)` : ''}`).join(' · ')}`));
     const detector = node('p', state.problem ? `Face detector: ${state.problem}` : state.detector ? `Faces are found by ${state.detector}, on this computer.` : `Face detector: ${state.detector_kind === 'vision' ? 'Apple Vision' : 'YuNet'}, loaded when face blur is first used.`);
     if (state.problem) detector.className = 'recording-warning';
     body.append(detector);
