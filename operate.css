@@ -7,6 +7,15 @@
 .feed h2 { font-size:1.05rem; margin:0 0 6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .feed .badge { font-size:.75rem; padding:2px 8px; border-radius:999px; background:#2b3a48; }
 .feed .badge.air { background:#e5484d; color:#fff; }
+.feed .badge.rec { background:transparent; border:1px solid #e5484d; color:#ff8a8e; }
+/* The temperature: quiet while it is fine, louder as it heats. */
+.feed .badge.heat { margin-left:auto; background:transparent; color:#9fb3c6; font-variant-numeric:tabular-nums; }
+.feed .badge.heat.warm { color:#f6c35b; border:1px solid rgba(246,195,91,.5); }
+.feed .badge.heat.hot { background:#b4232a; color:#fff; }
+.feed .badge.heat.critical { background:#e5484d; color:#fff; animation:heat-pulse 1.2s ease-in-out infinite; }
+@keyframes heat-pulse { 50% { opacity:.55; } }
+@media (prefers-reduced-motion: reduce) { .feed .badge.heat.critical { animation:none; } }
+.feed .buttons .danger { border-color:#b4232a; }
 .feed .picture { position:relative; aspect-ratio:16/9; background:#0b1117; border-radius:6px; overflow:hidden; }
 .feed .picture img { width:100%; height:100%; object-fit:contain; display:block; }
 .feed .picture .said { position:absolute; inset:0; display:grid; place-items:center; text-align:center; padding:12px; color:#b7c6d4; }

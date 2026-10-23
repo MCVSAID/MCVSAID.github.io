@@ -116,6 +116,15 @@
     const actions = node('p', ''); actions.className = 'recipe-load-row';
     if (rows.length < 12) actions.append(button('Add a phrase', () => { zoomDraft = [...rows, { phrase: '', action: 'close', camera: 'on_air' }]; paint(true); }));
     if (zoomDraft) actions.append(button('Save zoom phrases', () => { const keep = rows.filter(r => r.phrase.trim()); zoomDraft = null; send({ zoom_phrases: keep }, 'Zoom phrases saved.'); }));
+    // The quick phrase spotter (spotter.py): your own phrases acted on as they end, beside Whisper.
+    const sp = v.spotter;
+    if (sp) {
+      const line = node('p', ''); line.className = 'recipe-load-row';
+      line.append(checkbox('Quick phrase spotter for your own phrases', sp.enabled, on => send({ spotter: on })));
+      line.append(node('small', !sp.enabled ? ' Off: Whisper alone hears every phrase.' : !sp.own ? ' Nothing of your own to listen for yet: add zoom phrases here, or a camera\u2019s own phrases above.' : !sp.runtime || !sp.installed ? ' Not set up: its two steps are in AI assistance above.'
+        : sp.problem ? ` Not working: ${sp.problem}. Whisper alone meanwhile.` : sp.on ? ` Listening for ${quoted(sp.phrases)}: acted on as each ends, a fifth of a second or so.` : ' Nothing of your own to listen for yet.'));
+      box.append(line);
+    }
     box.append(actions, node('small', 'Called like a shot (“give me a close up”, “camera, zoom in”) or said alone (“Close up!”); with a shot call (“cut to the stove, close up”) it zooms the camera just called. A phone with app 0.9.38 glides there, handing over to its telephoto on the way; an older one changes at once. The director holds a camera on air while it zooms.'));
     return box;
   }
@@ -127,7 +136,7 @@
     for (const entry of v.heard) {
       const li = document.createElement('li'); li.className = entry.did ? 'did' : 'ignored';
       const ago = entry.ago + (Date.now() - fetchedAt) / 1000;
-      li.append(node('q', entry.text), node('small', ` ${entry.typed ? 'typed' : `${Math.round(entry.sure * 100)}% sure`}${entry.early ? ', while still speaking' : ''}${entry.took != null ? `, understood in ${entry.took.toFixed(1)} s` : ''}, ${clock(ago)} ago`), node('br', ''), node('span', entry.did ? `→ ${entry.did}` : `→ nothing: ${entry.why}`));
+      li.append(node('q', entry.text), node('small', ` ${entry.typed ? 'typed' : entry.spotted ? 'spotted as it ended (quick phrase spotter)' : `${Math.round(entry.sure * 100)}% sure`}${entry.early ? ', while still speaking' : ''}${entry.took != null ? `, understood in ${entry.took.toFixed(1)} s` : ''}, ${clock(ago)} ago`), node('br', ''), node('span', entry.did ? `→ ${entry.did}` : `→ nothing: ${entry.why}`));
       list.append(li);
     }
     heard.append(list);

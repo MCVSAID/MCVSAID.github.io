@@ -437,7 +437,8 @@
       if (zon !== undefined) { zooms.on = zon === null ? zooms.default : zon; zooms.set = zon !== null; }
       if (own) { zooms.own = own; zooms.phrases = [...own.map(p => ({ ...p, source: 'own' })), ...zooms.phrases.filter(p => p.source !== 'own')]; }
     }
-    return { ...recorded, ...(cue ? { enabled: cue.enabled, device: cue.device, source: cue.source, model: cue.model } : {}), listening: !!(cue ? cue.enabled : recorded.enabled) && (shots.on || mode() === 'cooking'), shots, zooms, heard };
+    const spotter = recorded.spotter ? { ...recorded.spotter, ...(typeof v.spotter === 'boolean' ? { enabled: v.spotter } : {}) } : null;
+    return { ...recorded, ...(cue ? { enabled: cue.enabled, device: cue.device, source: cue.source, model: cue.model } : {}), spotter, listening: !!(cue ? cue.enabled : recorded.enabled) && (shots.on || mode() === 'cooking'), shots, zooms, heard };
   }
   const LEAD = /\b(?:(?:cut|cutting|switch|switching|go|going|jump|change|move|take|let's go|lets go|let's cut|let's switch)\s+(?:back\s+|over\s+|across\s+)?to|over\s+to|back\s+to|show(?:ing)?(?:\s+(?:me|us|them|you|everyone))?|let's\s+see|lets\s+see|let's\s+look\s+at|give\s+(?:me|us)|camera\s+on|bring\s+up)\s+(?:the\s+|that\s+|our\s+|my\s+|this\s+)?$/;
   const FILLER = new Set(['the', 'a', 'shot', 'camera', 'cam', 'angle', 'view', 'please', 'now', 'okay', 'ok', 'and', 'so', 'right', 'go', 'on', 'over', 'there', 'thanks']);
@@ -492,6 +493,7 @@
     for (const [id, list] of Object.entries(body.phrases || {})) v.phrases[id] = [...new Set((list || []).map(p => String(p).split(/\s+/).join(' ').trim()).filter(Boolean))].slice(0, 8);
     if (typeof body.min_confidence === 'number') v.min = body.min_confidence;
     if ('zoom_on' in body) (v.zoomOn = v.zoomOn || {})[mode()] = body.zoom_on;
+    if (typeof body.spotter === 'boolean') v.spotter = body.spotter;
     if (Array.isArray(body.zoom_phrases)) (v.zoomPhrases = v.zoomPhrases || {})[mode()] = body.zoom_phrases.slice(0, 12).map(p => ({ phrase: String(p.phrase || '').split(/\s+/).join(' ').trim().slice(0, 40), action: p.action, camera: p.camera || 'on_air' })).filter(p => p.phrase);
     if (cue && typeof body.device === 'string') { cue.device = body.device.trim(); cue.source = cue.device || 'BlackHole 2ch'; }
     if (cue && body.model) cue.model = body.model;

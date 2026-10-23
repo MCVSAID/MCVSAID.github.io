@@ -104,6 +104,8 @@ function draw() {
     if (onAir) heading.append(node('span', 'ON AIR', 'badge air'));
     for (const index of drivers) { const badge = node('span', `Controller ${index + 1}`, 'badge'); badge.style.background = COLOURS[index % COLOURS.length]; badge.style.color = '#101820'; heading.append(badge); }
     const t = camera.telemetry || {}, gimbal = camera.gimbal;
+    if (camera.online && t.recording) heading.append(node('span', 'REC', 'badge rec'));
+    const heat = temperature(camera); if (heat) heading.append(heat);
     const zoom = t.zoom_percent ? ` · zoom ${(t.zoom_percent / 100).toFixed(1)}×` : '';
     const line = tile.querySelector('.line');
     line.textContent = `${!camera.online ? 'Offline' : gimbal?.summary || (gimbal ? 'Gimbal not connected' : 'No gimbal: zoom and cut only')}${camera.lens_now ? '' : zoom}${director.gimbal_out?.[camera.id] ? ` · kept off air: ${director.gimbal_out[camera.id]}` : ''}`;
@@ -111,6 +113,8 @@ function draw() {
     const buttons = tile.querySelector('.buttons'); buttons.replaceChildren();
     const take = node('button', onAir ? 'On air' : 'Put on air'); take.disabled = onAir || !camera.online; take.onclick = () => act('/api/director', { take: camera.id }).then(refresh);
     buttons.append(take);
+    // Arming, streaming and recording, as on its card: only what fits the camera's state; stopping asks first.
+    if (camera.online) buttons.append(...capture(camera, t));
     if (gimbal?.connected) {
       const stop = node('button', 'Stop'); stop.onclick = () => send(camera.id, 'gimbal.stop');
       buttons.append(stop);
@@ -134,6 +138,45 @@ function draw() {
     else { follow.replaceChildren(); delete follow.dataset.signature; }
   }
   drawPads(shown);
+}
+
+// The capture controls of a tile: Arm when not armed; once armed, the stream and the recording each started or
+// stopped, and Disarm when it is doing neither. Stopping asks first, with the card's words; starting syncs the phone's
+// clock first when it is off, as the card does.
+const WARN = { 'stream.stop': 'This can interrupt capture.', 'recording.stop': 'This can interrupt capture.',
+  'camera.disarm': 'Disarm stops the capture service. Remote Arm only works on a phone set up as device owner; otherwise someone must tap Arm on the phone.' };
+function capture(camera, t) {
+  const streaming = !!(t.streaming || t.capture?.streamRequested), made = [];
+  const button = (label, command, danger) => {
+    const b = node('button', label); if (danger) b.className = 'danger';
+    b.onclick = async () => {
+      if (WARN[command] && !await window.concert.sure(`${label} on ${camera.name}?\n${WARN[command]}`, { ok: label, danger: true })) return;
+      b.disabled = true;
+      const clockOff = ['stream.start', 'recording.start'].includes(command) && t.capabilities?.time_sync && typeof camera.clock_offset_ms === 'number' && Math.abs(camera.clock_offset_ms) > 20;
+      if (clockOff) await send(camera.id, 'time.sync');
+      await send(camera.id, command, command === 'camera.arm' && t.capabilities?.stream_only_arm ? { local_recording: false } : {});
+      refresh();
+    };
+    return b;
+  };
+  if (!t.armed) return [button('Arm', 'camera.arm')];
+  made.push(streaming ? button('Stop stream', 'stream.stop', true) : button('Start stream', 'stream.start'));
+  made.push(t.recording ? button('Stop recording', 'recording.stop', true) : button('Record', 'recording.start'));
+  if (!streaming && !t.recording) made.push(button('Disarm', 'camera.disarm', true));
+  return made;
+}
+
+// The phone's temperature, small, coloured by how hot (thermal.py's levels), and the rest when pointed at.
+function temperature(camera) {
+  const h = camera.thermal; if (!camera.online || !h || h.temperature_c == null) return null;
+  const chip = node('span', `${Math.round(h.temperature_c)}°`, `badge heat ${h.level}`);
+  const trend = typeof h.trend_c_per_minute === 'number' && Math.abs(h.trend_c_per_minute) >= 0.05 ? `, ${h.trend_c_per_minute > 0 ? 'rising' : 'falling'} ${Math.abs(h.trend_c_per_minute).toFixed(1)} °C a minute` : ', steady';
+  const left = typeof h.minutes_to_stop === 'number' ? `; at this rate it reaches its ${h.stop_c} °C stop in about ${Math.round(h.minutes_to_stop)} minutes` : '';
+  const word = { ok: '', warm: ' Warm: give it air or a lighter load.', hot: ' Hot: at its stop temperature, the phone protects itself.', critical: ' Critical: cool it now.' }[h.level] || '';
+  chip.title = `Phone at ${h.temperature_c.toFixed(1)} °C${trend}${left}.${word}`;
+  chip.setAttribute('aria-label', chip.title);
+  if (h.level !== 'ok') chip.textContent += ` ${h.level}`;
+  return chip;
 }
 
 function goHome(id) { return act(`/api/cameras/${encodeURIComponent(id)}/gimbal-home`, { action: 'go' }).then(refresh); }
