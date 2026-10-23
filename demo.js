@@ -45,6 +45,25 @@
     d.since = now_; S.nextCut = now_ + 8 + Math.random() * 10;
     if (d.recording) { d.cuts = (d.cuts || 0) + 1; }
     if (!byHand) chatCut(d.pair ? d.pair.map(named).join(' + ') : named(target));
+    explainCut(d.pair ? d.pair.map(named).join(' + ') : named(target), byHand);
+  }
+  // Explain the director (explain.py): in the demo, each cut becomes a caption, as the manager makes them.
+  function explainState() {
+    const recorded = S.answers['/api/explain'] || { on: false, seconds: 7, spotlight_seconds: 45, position: 'top-left', recent: [] };
+    return S.explain = S.explain || { ...copy(recorded), overlay: { problem: null, scenes: 6, quiet: null } };
+  }
+  function explainCut(where, byHand) {
+    const e = explainState(); if (!e.on || !where) return;
+    const reasons = ['the performer it is given is playing and well framed', 'the guitarist is to the fore in the sound', 'a wider look after a long close shot', 'the singer turned towards this camera'];
+    e.recent = [...e.recent, { at: now(), kind: 'cut', title: `Cut to ${where}`, text: byHand ? 'Operator: chosen by hand' : `AI director: ${reasons[Math.floor(Math.random() * reasons.length)]}` }].slice(-8);
+  }
+  function explainPost(body) {
+    const e = explainState();
+    if ('on' in body) { e.on = !!body.on; if (e.on) { e.recent = []; note('In the demo the captions are listed here; in a real show they are laid over the programme in OBS, and recorded with it.'); } }
+    if (typeof body.seconds === 'number') e.seconds = body.seconds;
+    if (typeof body.spotlight_seconds === 'number') e.spotlight_seconds = body.spotlight_seconds;
+    if (body.position) e.position = body.position;
+    save(); return answer(e);
   }
   function tick() {
     if (!S) return;
@@ -411,7 +430,14 @@
     });
     const cue = R()?.voice;
     const heard = (cue ? cue.heard : S.voiceHeard || []).map(e => ({ ...e, ago: Math.round(now() - e.at) }));
-    return { ...recorded, ...(cue ? { enabled: cue.enabled, device: cue.device, source: cue.source, model: cue.model } : {}), listening: !!(cue ? cue.enabled : recorded.enabled) && (shots.on || mode() === 'cooking'), shots, heard };
+    // Zoom calls (voicezoom.py): switched and given phrases of their own for each kind of event, as the manager keeps them.
+    const zooms = recorded.zooms ? copy(recorded.zooms) : null;
+    if (zooms) {
+      const zm = zooms.mode, zon = (v.zoomOn || {})[zm], own = (v.zoomPhrases || {})[zm];
+      if (zon !== undefined) { zooms.on = zon === null ? zooms.default : zon; zooms.set = zon !== null; }
+      if (own) { zooms.own = own; zooms.phrases = [...own.map(p => ({ ...p, source: 'own' })), ...zooms.phrases.filter(p => p.source !== 'own')]; }
+    }
+    return { ...recorded, ...(cue ? { enabled: cue.enabled, device: cue.device, source: cue.source, model: cue.model } : {}), listening: !!(cue ? cue.enabled : recorded.enabled) && (shots.on || mode() === 'cooking'), shots, zooms, heard };
   }
   const LEAD = /\b(?:(?:cut|cutting|switch|switching|go|going|jump|change|move|take|let's go|lets go|let's cut|let's switch)\s+(?:back\s+|over\s+|across\s+)?to|over\s+to|back\s+to|show(?:ing)?(?:\s+(?:me|us|them|you|everyone))?|let's\s+see|lets\s+see|let's\s+look\s+at|give\s+(?:me|us)|camera\s+on|bring\s+up)\s+(?:the\s+|that\s+|our\s+|my\s+|this\s+)?$/;
   const FILLER = new Set(['the', 'a', 'shot', 'camera', 'cam', 'angle', 'view', 'please', 'now', 'okay', 'ok', 'and', 'so', 'right', 'go', 'on', 'over', 'there', 'thanks']);
@@ -465,6 +491,8 @@
     if ('on' in body) v.on[mode()] = body.on;
     for (const [id, list] of Object.entries(body.phrases || {})) v.phrases[id] = [...new Set((list || []).map(p => String(p).split(/\s+/).join(' ').trim()).filter(Boolean))].slice(0, 8);
     if (typeof body.min_confidence === 'number') v.min = body.min_confidence;
+    if ('zoom_on' in body) (v.zoomOn = v.zoomOn || {})[mode()] = body.zoom_on;
+    if (Array.isArray(body.zoom_phrases)) (v.zoomPhrases = v.zoomPhrases || {})[mode()] = body.zoom_phrases.slice(0, 12).map(p => ({ phrase: String(p.phrase || '').split(/\s+/).join(' ').trim().slice(0, 40), action: p.action, camera: p.camera || 'on_air' })).filter(p => p.phrase);
     if (cue && typeof body.device === 'string') { cue.device = body.device.trim(); cue.source = cue.device || 'BlackHole 2ch'; }
     if (cue && body.model) cue.model = body.model;
     save(); return answer(voiceRead());
@@ -486,6 +514,7 @@
     if (path === '/api/stage') return { ...a['/api/stage'], director: director() };
     if (path === '/api/stage/place') return placing();
     if (path === '/api/coolers/job') return S.coolerJob || {};
+    if (path === '/api/explain') return explainState();
     if (path === '/api/temperatures') {
       const exact = a[`${path}?${query}`]; if (exact) return exact;
       const key = Object.keys(a).find(k => k.startsWith('/api/temperatures?')); return key ? a[key] : { cameras: [] };
@@ -579,7 +608,7 @@
     // what order, and following by the plan on or off. As the manager answers; nothing turns, the pictures are drawn.
     const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
     const g = camera.gimbal; if (!g?.plan) return answer({ detail: 'This camera’s gimbal cannot follow performers' }, 409);
-    for (const k of ['solos', 'prominent', 'anyone']) if (k in body) { if (typeof body[k] !== 'boolean') return answer({ detail: 'solos, prominent, anyone and start are true or false' }, 400); g.plan[k] = body[k]; }
+    for (const k of ['solos', 'prominent', 'anyone', 'zoom']) if (k in body) { if (typeof body[k] !== 'boolean') return answer({ detail: 'solos, prominent, anyone and start are true or false' }, 400); g.plan[k] = body[k]; }
     if (Array.isArray(body.order)) {
       const names = Object.fromEntries((g.choices || []).map(c => [c.id, c.name]));
       if (body.order.some(o => !names[o])) return answer({ detail: 'order is a list of enrolled, consenting performers, while recognition is on' }, 400);
@@ -787,6 +816,7 @@
     if (path === '/api/event-mode') return kindPost(body);
     if (path === '/api/scene-chat') return chatPost(body);
     if (path === '/api/voice') return voiceShotPost(body);
+    if (path === '/api/explain') return explainPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
     const fleet = path.match(/^\/api\/coolers\/(forget|repair)$/); if (fleet) return coolersPost(fleet[1]);
     if (path === '/api/operate/control') return answer({ camera_id: body.camera_id, sent: body.pan || body.tilt ? 'gimbal.move' : null, zoom_percent: null, said: null });

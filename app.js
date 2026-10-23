@@ -32,7 +32,7 @@ const PARTS = {
   '/recipe': ['#recipe'],
   '/cameras': ['#studio', '#bands', '#cameras'],
   '/colour': ['#colour'],
-  '/director': ['#ai-setup', '#director-settings', '#voice-shots', '#face-blur', '#obs-sync'],
+  '/director': ['#ai-setup', '#director-settings', '#voice-shots', '#explain', '#face-blur', '#obs-sync'],
   '/recordings': ['#recordings-tabs', '#pc-recordings', '#relay'],
   '/system': ['#system-tabs', '#devices-setup', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#manager-update', '#decoding', '#face-blur-system'],
 };

@@ -74,6 +74,43 @@
     return box;
   }
 
+  // Voice zoom calls (voicezoom.py): a tighter or wider shot asked for aloud, by the host or a performer. Built-in
+  // phrases only where calls are on by default; this kind of event's own phrases everywhere, each zooming the camera on
+  // air or a named one.
+  const ACTION_WORDS = { tighter: 'Tighter (1.5×)', wider: 'Wider (1.5×)', close: 'Close-up (just past the telephoto)', normal: 'Back to normal (1×)' };
+  let zoomDraft = null;
+  function zoomCalls(v, s) {
+    const z = v.zooms, box = node('div', ''); box.className = 'voice-cameras';
+    if (!z) return box;
+    box.append(node('h4', 'Zoom calls'));
+    box.append(checkbox(`Zoom when a tighter or wider shot is asked for, in ${modeName(z.mode)}`, z.on, on => send({ zoom_on: on })));
+    if (z.set) box.append(button(`Back to ${modeName(z.mode)}’s default (${z.default ? 'on' : 'off'})`, () => send({ zoom_on: null })));
+    box.append(node('small', z.built_in
+      ? `Built in: ${quoted(z.phrases.filter(p => p.source === 'built in').map(p => p.phrase))}, for the camera on air. Add your own below.`
+      : `${modeName(z.mode)} has no built-in zoom phrases (a lyric like “closer” would set them off): only the phrases below, so choose words nobody sings, such as “camera, close on me”.`));
+    const rows = zoomDraft || z.own.map(p => ({ ...p }));
+    const list = node('div', '');
+    rows.forEach((row, n) => {
+      const line = node('p', ''); line.className = 'recipe-load-row';
+      const text = document.createElement('input'); text.type = 'text'; text.maxLength = 40; text.size = 24; text.value = row.phrase; text.placeholder = 'camera, close on me'; text.setAttribute('aria-label', 'Zoom phrase');
+      text.oninput = () => { zoomDraft = rows; row.phrase = text.value; };
+      const action = document.createElement('select'); action.setAttribute('aria-label', 'What it does');
+      for (const [value, label] of Object.entries(ACTION_WORDS)) { const o = node('option', label); o.value = value; o.selected = value === row.action; action.append(o); }
+      action.onchange = () => { zoomDraft = rows; row.action = action.value; };
+      const camera = document.createElement('select'); camera.setAttribute('aria-label', 'Which camera');
+      for (const [value, label] of [['on_air', 'the camera on air'], ...s.cameras.map(c => [c.id, c.name])]) { const o = node('option', label); o.value = value; o.selected = value === (row.camera || 'on_air'); camera.append(o); }
+      camera.onchange = () => { zoomDraft = rows; row.camera = camera.value; };
+      line.append(text, action, camera, button('✕', () => { zoomDraft = rows.filter((_, m) => m !== n); paint(true); }));
+      list.append(line);
+    });
+    box.append(list);
+    const actions = node('p', ''); actions.className = 'recipe-load-row';
+    if (rows.length < 12) actions.append(button('Add a phrase', () => { zoomDraft = [...rows, { phrase: '', action: 'close', camera: 'on_air' }]; paint(true); }));
+    if (zoomDraft) actions.append(button('Save zoom phrases', () => { const keep = rows.filter(r => r.phrase.trim()); zoomDraft = null; send({ zoom_phrases: keep }, 'Zoom phrases saved.'); }));
+    box.append(actions, node('small', 'Called like a shot (“give me a close up”, “camera, zoom in”) or said alone (“Close up!”); with a shot call (“cut to the stove, close up”) it zooms the camera just called. A phone with app 0.9.38 glides there, handing over to its telephoto on the way; an older one changes at once. The director holds a camera on air while it zooms.'));
+    return box;
+  }
+
   function heardBox(v) {
     const heard = node('div', ''); heard.className = 'recipe-heard'; heard.append(node('h4', 'Heard'));
     if (!v.heard.length) { heard.append(node('small', v.listening ? 'Nothing yet.' : 'Nothing: not listening. Try a phrase below to see what it would do.')); return heard; }
@@ -109,7 +146,7 @@
     try_.append(node('span', 'Try a phrase, as if the host said it: '), phrase, act);
     try_.onsubmit = event => { event.preventDefault(); const text = phrase.value.trim(); if (!text) return; phrase.value = ''; send({ say: text }, ''); };
     const message = node('p', said); message.setAttribute('aria-live', 'polite'); if (/not |need|fail|error|refus|must|at most/i.test(said)) message.className = 'recording-warning';
-    parts.push(switches(v, s), hearing(v), sure, cameras(s), heardBox(v), try_, node('small', 'It acts on the show as a call would: the camera goes on air.'), message);
+    parts.push(switches(v, s), hearing(v), sure, cameras(s), zoomCalls(v, s), heardBox(v), try_, node('small', 'It acts on the show as a call would: the camera goes on air.'), message);
     panel.replaceChildren(...parts);
   }
 

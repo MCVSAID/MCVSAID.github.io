@@ -10,7 +10,8 @@
   const STATES = { searching: 'looking for someone', lost: 'lost them; still', no_picture: 'no picture to follow by: start the camera' };
   const RULES = [['solos', 'Solos take over', 'While the sound hears a solo, whoever plays that instrument (their instruments on the People page), even if they are not in the list below. A solo nobody enrolled plays turns a gimbal aimed from the stage to where that instrument stands.'],
                  ['prominent', 'Prominent players too', 'An instrument that has been loudest in the sound for a few seconds takes over without a solo being declared. Voices are left out: a singer is to the fore most of a song.'],
-                 ['anyone', 'Anyone else when none of them is in view', 'Rather than holding an empty spot: the phone follows whichever face it sees, so a guest who walks on from the other side is in shot.']];
+                 ['anyone', 'Anyone else when none of them is in view', 'Rather than holding an empty spot: the phone follows whichever face it sees, so a guest who walks on from the other side is in shot.'],
+                 ['zoom', 'The zoom frames whom it follows', 'The director’s zoom on this camera frames whom the plan is on (the soloist, the next in its order, or for anyone, whoever is in the middle of its picture), rather than choosing by itself.']];
 
   function block(camera, ctx) {
     const gimbal = camera.gimbal || {}, plan = gimbal.plan, admin = ctx.role === 'admin', id = encodeURIComponent(camera.id);
@@ -27,7 +28,7 @@
     if (gimbal.choices) for (const performer of gimbal.choices) choices.push([`performer:${performer.id}`, performer.name]);
     if (plan) choices.push(['plan', 'By its follow plan (below)']);
     else if (gimbal.performer) choices.push(['plan', 'Its performer']);
-    const chosen = (gimbal.choices || []).filter(p => p.chosen), ruled = plan && RULES.some(([key]) => plan[key]);
+    const chosen = (gimbal.choices || []).filter(p => p.chosen), ruled = plan && RULES.some(([key]) => key !== 'zoom' && plan[key]);
     const now = !gimbal.follow ? 'off' : gimbal.performer ? (chosen.length === 1 && !ruled ? `performer:${chosen[0].id}` : 'plan') : 'face';
     for (const [value, text] of choices) { const option = node('option', text); option.value = value; option.selected = value === now; pick.append(option); }
     pick.onchange = () => {
@@ -60,7 +61,7 @@
     // The plan: who, first choice first (an administrator), and what may take over.
     if (plan) {
       const details = node('details', undefined, 'follow-plan'); details.open = now === 'plan' || ruled || plan.count > 1;
-      details.append(node('summary', `Follow plan${plan.count ? ` · ${plan.count} performer${plan.count === 1 ? '' : 's'}` : ''}${ruled ? ' · ' + RULES.filter(([key]) => plan[key]).map(([, text]) => text.split(' ')[0].toLowerCase()).join(', ') : ''}`));
+      details.append(node('summary', `Follow plan${plan.count ? ` · ${plan.count} performer${plan.count === 1 ? '' : 's'}` : ''}${ruled ? ' · ' + RULES.filter(([key]) => key !== 'zoom' && plan[key]).map(([, text]) => text.split(' ')[0].toLowerCase()).join(', ') : ''}`));
       if (admin && plan.order) {
         const list = node('ol', undefined, 'follow-order'), order = plan.order.map(p => p.id);
         const save = ids => post('gimbal-plan', { order: ids }, 'Follow plan');

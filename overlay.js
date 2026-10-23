@@ -75,7 +75,29 @@ function mark(state) {
   }
 }
 
+// Explain the director: caption cards, each added with a fade and taken away with one, keyed by when and what.
+const KINDS = { cut: 'Shot choice', sound: 'Heard in the music', gimbal: 'Gimbal', lens: 'Lens', voice: 'Voice call', spotlight: 'Feature' };
+function explain(state) {
+  const box = $('explain'), cards = state.explain || [];
+  box.className = state.explain_position || 'top-left';
+  const wanted = new Set(cards.map(c => `${c.at}|${c.title}`));
+  for (const element of [...box.children]) if (!wanted.has(element.dataset.key) && !element.classList.contains('leaving')) {
+    element.classList.add('leaving', 'fading'); setTimeout(() => element.remove(), 450);
+  }
+  for (const c of cards) {
+    const key = `${c.at}|${c.title}`;
+    if ([...box.children].some(e => e.dataset.key === key)) continue;
+    const element = document.createElement('section'); element.className = `explain-card ${c.kind} fading`; element.dataset.key = key;
+    const kind = document.createElement('div'); kind.className = 'explain-kind'; kind.textContent = KINDS[c.kind] || 'Director';
+    const title = document.createElement('h3'); title.textContent = c.title;
+    const text = document.createElement('p'); text.textContent = c.text;
+    element.append(kind, title, text); box.append(element);
+    requestAnimationFrame(() => requestAnimationFrame(() => element.classList.remove('fading')));
+  }
+}
+
 function show(state) {
+  explain(state);
   const card = $('card'), qr = $('qr'), caption = $('caption'), popup = $('popup'), lower = $('lower');
   if (!state.on) { for (const element of [card, qr, caption, popup, lower]) fade(element, false); shown.popup = shown.lower = null; return; }
   const sideChanged = shown.side !== null && shown.side !== state.side;
