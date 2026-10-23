@@ -69,6 +69,8 @@ main section > h2, #devices-setup > h2 { margin:18px 0 6px; font-size:1.25rem; }
 .camera-state { font-weight:600; margin:4px 0 8px; } .camera-state.online::before { content:'● '; color:#6fcf97; } .camera-state.offline::before { content:'● '; color:#e2725b; }
 .camera-controls { display:flex; flex-wrap:wrap; gap:2px; margin:8px 0; }
 .aim-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
+.follow-plan summary { cursor:pointer; } .follow-rule { display:block; margin:4px 0; }
+.follow-order { margin:6px 0; padding-left:22px; } .follow-order button { padding:0 8px; }
 .aim-pad { display:grid; grid-template-columns:repeat(3, 44px); grid-auto-rows:44px; gap:4px; touch-action:none; user-select:none; -webkit-user-select:none; }
 .aim-pad button { margin:0; padding:0; font-size:18px; }
 .aim-pad.tracking button { outline:2px solid #ffd17a; outline-offset:-2px; }

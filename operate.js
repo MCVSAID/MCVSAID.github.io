@@ -4,11 +4,13 @@
 // Each controller drives one camera at a time (LB/RB to change); its readings go to the manager ten times a second while
 // a stick or trigger is held (/api/operate/control), and the phone stops its gimbal by itself half a second after the last.
 let csrf = '', state = null, speed = 1;
+try { const kept = Number(localStorage.getItem('operate-speed')); if (kept >= 0 && kept <= 4) speed = kept; } catch (error) {}
 const result = document.querySelector('#result'), feeds = document.querySelector('#feeds'), choices = document.querySelector('#choices');
 const tiles = new Map(), drives = new Map(), pads = new Map();          // camera id -> tile; gamepad index -> camera id; index -> last reading
-const SPEEDS = [0.35, 0.65, 1];                                         // aiming speed presets: the most the stick asks for
+const SPEEDS = [0.08, 0.15, 0.25, 0.4, 0.6];                            // aiming speed presets: the most the stick asks for
+const SPEED_WORDS = ['very slow', 'slow', 'normal', 'fast', 'very fast'];
 const COLOURS = ['#5fb4ee', '#f4a261', '#90be6d', '#f78fb3'];
-const DEAD = 0.15, ZOOM_DEAD = 0.08, EVERY_MS = 100;
+const DEAD = 0.18, ZOOM_DEAD = 0.1, EVERY_MS = 100;
 // A camera's live feed; the clickable demo (demo-site) gives its drawn stills instead, having no relay.
 const feed = (id, again) => window.concertDemo?.feed ? window.concertDemo.feed(id) : `/api/operate/feed/${encodeURIComponent(id)}${again ? `?t=${Date.now()}` : ''}`;
 function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
@@ -49,6 +51,9 @@ async function refresh() {
   draw();
 }
 
+const followContext = camera => ({ role: window.concert?.session?.role || 'operator', off: !camera.online,
+  post: (path, body) => api(path, body), send: (c, command, parameters) => send(c.id, command, parameters), refresh, tell: message => { result.textContent = message; } });
+
 function draw() {
   if (!state) return;
   const shown = chosen(), director = state.director || {};
@@ -75,7 +80,7 @@ function draw() {
       img.onerror = () => { said.hidden = false; said.textContent = 'No live picture (is the camera streaming, and the relay on?). Trying again…'; setTimeout(() => { img.src = feed(camera.id, true); }, 3000); };
       img.src = feed(camera.id);
       picture.append(img, said);
-      tile.append(node('h2'), picture, node('p', '', 'line'), node('div', undefined, 'buttons'));
+      tile.append(node('h2'), picture, node('p', '', 'line'), node('div', undefined, 'buttons'), node('div', undefined, 'follow'));
       tile.onclick = event => { if (event.target.closest('button')) return; const index = [...drives.keys()][0]; if (index !== undefined) { drives.set(index, camera.id); draw(); } };
       feeds.append(tile); tiles.set(camera.id, tile);
     }
@@ -95,15 +100,25 @@ function draw() {
     if (gimbal?.connected) {
       const stop = node('button', 'Stop'); stop.onclick = () => send(camera.id, 'gimbal.stop');
       buttons.append(stop);
-      if (t.capabilities?.gimbal_follow) {
-        const following = !!gimbal.follow;
-        const follow = node('button', following ? 'Follow off' : 'Follow a face'); follow.onclick = () => send(camera.id, 'gimbal.follow', following ? { on: false } : { on: true, who: 'face' }).then(refresh);
-        buttons.append(follow);
+      // Its home position (gimbal.point to angles kept here): set where it points now, and go back there.
+      if (gimbal.home) {
+        const home = node('button', 'Home'); home.disabled = !gimbal.home.set || gimbal.home.stale;
+        home.title = !gimbal.home.set ? 'No home position yet: aim it, then Set home' : gimbal.home.stale ? 'The phone restarted since Set home: aim it and Set home again' : 'Turn it back to its home position (stops following). Controller: press the right stick';
+        home.onclick = () => goHome(camera.id);
+        const sethome = node('button', gimbal.home.set ? 'Set home again' : 'Set home'); sethome.title = 'Keep where it points now as its home position';
+        sethome.onclick = () => act(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-home`, { action: 'set' }).then(done => { if (done) result.textContent = `${camera.name}: home set`; refresh(); });
+        buttons.append(home, sethome);
       }
     }
+    // Whom its gimbal follows and its follow plan: the camera card's own control (follow.js), the same setting.
+    const follow = tile.querySelector('.follow');
+    if (gimbal?.connected && t.capabilities?.gimbal_follow) window.gimbalFollow.into(follow, camera, followContext(camera));
+    else { follow.replaceChildren(); delete follow.dataset.signature; }
   }
   drawPads(shown);
 }
+
+function goHome(id) { return act(`/api/cameras/${encodeURIComponent(id)}/gimbal-home`, { action: 'go' }).then(refresh); }
 
 document.querySelector('#main-stage').onclick = () => act('/api/operate/main', {}).then(refresh);
 document.querySelector('#previous').onclick = () => act('/api/operate/previous', {}).then(refresh);
@@ -118,11 +133,15 @@ function drawPads(shown) {
     for (const camera of shown) { const option = node('option', camera.name); option.value = camera.id; option.selected = drives.get(pad.index) === camera.id; pick.append(option); }
     pick.onchange = () => { drives.set(pad.index, pick.value); draw(); };
     const swatch = node('span', '■ '); swatch.style.color = COLOURS[pad.index % COLOURS.length];
-    row.append(swatch, node('span', `Controller ${pad.index + 1} drives `), pick, node('span', ` · aiming ${['slow', 'normal', 'fast'][speed]}`));
+    row.append(swatch, node('span', `Controller ${pad.index + 1} drives `), pick, node('span', ` · aiming ${SPEED_WORDS[speed]} (d-pad up / down)`));
     return row;
   }));
 }
-const curve = v => { const a = Math.abs(v); if (a < DEAD) return 0; const x = (a - DEAD) / (1 - DEAD); return Math.sign(v) * (0.4 * x + 0.6 * x * x * x); };
+// Gentle near the middle for small corrections, the full preset only at the edge: mostly cubic.
+const curve = v => { const a = Math.abs(v); if (a < DEAD) return 0; const x = (a - DEAD) / (1 - DEAD); return Math.sign(v) * (0.15 * x + 0.85 * x * x * x); };
+// A trigger: squared, so a light squeeze creeps and a full one moves.
+const squeeze = v => { const a = Math.abs(v); if (a < ZOOM_DEAD) return 0; const x = (a - ZOOM_DEAD) / (1 - ZOOM_DEAD); return Math.sign(v) * x * x; };
+const keepSpeed = () => { try { localStorage.setItem('operate-speed', String(speed)); } catch (error) {} };
 function step(index, delta) {
   const shown = chosen(); if (!shown.length) return;
   const at = Math.max(0, shown.findIndex(c => c.id === drives.get(index)));
@@ -146,14 +165,15 @@ function poll(time) {
     if (pressed(2)) { const c = state.cameras.find(x => x.id === camera); if (c?.gimbal?.connected) send(camera, 'gimbal.follow', c.gimbal.follow ? { on: false } : { on: true, who: 'face' }).then(refresh); }
     if (pressed(3)) act('/api/operate/previous', {}).then(refresh);
     if (pressed(8)) act('/api/operate/main', {}).then(refresh);
+    if (pressed(11)) goHome(camera);
     if (pressed(4) || pressed(14)) step(pad.index, -1);
     if (pressed(5) || pressed(15)) step(pad.index, 1);
-    if (pressed(12)) { speed = Math.min(SPEEDS.length - 1, speed + 1); draw(); }
-    if (pressed(13)) { speed = Math.max(0, speed - 1); draw(); }
+    if (pressed(12)) { speed = Math.min(SPEEDS.length - 1, speed + 1); keepSpeed(); draw(); }
+    if (pressed(13)) { speed = Math.max(0, speed - 1); keepSpeed(); draw(); }
     const most = SPEEDS[speed] * 100;
     // Aimed with the right stick (axes 2 and 3 in the standard mapping), as a camera operator's right hand does.
     const pan = Math.round(curve(pad.axes[2] || 0) * most), tilt = Math.round(-curve(pad.axes[3] || 0) * most);
-    const zoomed = (pad.buttons[7]?.value || 0) - (pad.buttons[6]?.value || 0), zoom = Math.abs(zoomed) < ZOOM_DEAD ? 0 : Math.round(zoomed * 100) / 100;
+    const zoomed = (pad.buttons[7]?.value || 0) - (pad.buttons[6]?.value || 0), zoom = Math.round(squeeze(zoomed) * 100) / 100;
     const active = pan !== 0 || tilt !== 0 || zoom !== 0;
     // Ten times a second while held; once more when let go, so the gimbal is told to stop at once.
     if ((active && time - last.sent >= EVERY_MS) || (!active && last.active)) {

@@ -540,8 +540,18 @@
     const name = String(body.name || '').split(/\s+/).filter(Boolean).join(' ');
     if (name.length < 1 || name.length > 80) return answer({ detail: 'Give the camera a name of 1 to 80 characters' }, 400);
     if (cams().cameras.some(c => c.id !== id && c.name.toLowerCase() === name.toLowerCase())) return answer({ detail: `There is already a camera called ${name}` }, 409);
-    const was = camera.name; camera.name = name; save();
-    return answer({ camera_id: id, name, was });
+    const was = camera.name; camera.name = name;
+    // OBS takes the new name too (scenes.rename): its source, its scene and its split screens, and a default shot naming one.
+    const scenes = {};
+    if (was !== name) {
+      scenes[`Cam ${was}`] = `Cam ${name}`;
+      for (const other of cams().cameras.filter(c => c.id !== id)) {
+        scenes[`Split ${was} + ${other.name}`] = `Split ${name} + ${other.name}`; scenes[`Split ${other.name} + ${was}`] = `Split ${other.name} + ${name}`;
+      }
+      const d = director(); for (const key of ['default_shot', 'scene']) if (d[key] in scenes) d[key] = scenes[d[key]];
+    }
+    save();
+    return answer({ camera_id: id, name, was, obs: was === name ? { sources: {}, scenes: {}, skipped: [] } : { sources: { [was]: name }, scenes: { [`Cam ${was}`]: `Cam ${name}` }, skipped: [] } });
   }
   function gimbalStagePost(id, body) {
     // Aiming from the stage (stageaim.py): Set keeps the angles it reports now as the middle of the stage; Centre stage
@@ -563,6 +573,48 @@
     }
     save();
     return answer(g.stage);
+  }
+  function gimbalPlanPost(id, body) {
+    // A gimbal camera's follow plan (gimbalpick.py), from its card or the Operate page: what takes over, whom it follows in
+    // what order, and following by the plan on or off. As the manager answers; nothing turns, the pictures are drawn.
+    const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
+    const g = camera.gimbal; if (!g?.plan) return answer({ detail: 'This camera’s gimbal cannot follow performers' }, 409);
+    for (const k of ['solos', 'prominent', 'anyone']) if (k in body) { if (typeof body[k] !== 'boolean') return answer({ detail: 'solos, prominent, anyone and start are true or false' }, 400); g.plan[k] = body[k]; }
+    if (Array.isArray(body.order)) {
+      const names = Object.fromEntries((g.choices || []).map(c => [c.id, c.name]));
+      if (body.order.some(o => !names[o])) return answer({ detail: 'order is a list of enrolled, consenting performers, while recognition is on' }, 400);
+      g.plan.order = body.order.map(o => ({ id: o, name: names[o] })); g.plan.count = body.order.length;
+      for (const c of g.choices || []) c.chosen = body.order.includes(c.id);
+    }
+    if ('start' in body) {
+      for (const x of [g, camera.telemetry?.gimbal].filter(Boolean)) x.follow = body.start ? { state: 'following', hands_on: false, by: 'face', pace: x.follow?.pace || 'normal' } : null;
+      if (body.start) note('In the demo the camera says it follows by its plan, but the pictures are drawn, so nobody is recognised and nothing turns.');
+    }
+    const first = g.plan.order?.[0];
+    g.performer = g.follow && (g.plan.count || g.plan.anyone) ? (first ? { name: first.name, seen_seconds: 0.6, why: null, reason: 'first in its order', anyone: false } : { name: null, seen_seconds: null, why: null, reason: 'anyone in view (none of its performers is)', anyone: true }) : null;
+    save();
+    return answer({ plan: g.plan, outcome: null });
+  }
+  function gimbalHomePost(id, body) {
+    // A gimbal camera's home position: Set keeps the angles it reports now, Home turns it back (and stops following).
+    const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
+    const g = camera.gimbal, a = camera.telemetry?.gimbal?.attitude || g?.attitude;
+    if (!g?.home) return answer({ detail: 'Gimbal: the camera app cannot turn to a position' }, 409);
+    if (!['set', 'go', 'forget'].includes(body.action)) return answer({ detail: 'action is set, go or forget' }, 400);
+    if (body.action === 'forget') g.home = { set: false };
+    else if (body.action === 'set') { if (!a) return answer({ detail: 'Gimbal: the phone is not reporting where it points' }, 409); g.home = { set: true, pan: a.pan, tilt: a.tilt, stale: false }; }
+    else {
+      if (!g.home.set) return answer({ detail: 'No home position yet: aim it, then Set home' }, 409);
+      for (const x of [camera.telemetry?.gimbal, g].filter(Boolean)) { x.follow = null; if (x.attitude) { x.attitude.pan = g.home.pan; x.attitude.tilt = g.home.tilt; } }
+      g.performer = null;
+      note('In the demo the gimbal says it is back home, but the pictures are drawn, so nothing moves.');
+    }
+    save();
+    return body.action === 'go' ? answer({ state: 'SUCCEEDED', demo: true }) : answer({ home: g.home });
+  }
+  function gimbalPerformerPost(id, body) {
+    // One performer by name: the plan's order becomes just them, and it follows by the plan.
+    return gimbalPlanPost(id, body.performer ? { order: [body.performer], start: true } : { order: [], start: false });
   }
   // The Operate page's live feeds: the demo's drawn stills (operate.js asks for these when it is here).
   window.concertDemo = Object.assign(window.concertDemo || {}, { feed: id => `/api/colour/preview/${encodeURIComponent(id)}` });
@@ -741,7 +793,10 @@
     if (path === '/api/operate/main' || path === '/api/operate/previous') return operatePost(path.endsWith('main'));
     const moved = path.match(/^\/api\/cameras\/([^/]+)\/accessory$/); if (moved) return accessoryPost(decodeURIComponent(moved[1]), body);
     const staged = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-stage$/); if (staged) return gimbalStagePost(decodeURIComponent(staged[1]), body);
+    const homed = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-home$/); if (homed) return gimbalHomePost(decodeURIComponent(homed[1]), body);
+    const planned = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-(plan|performer)$/); if (planned) return (planned[2] === 'plan' ? gimbalPlanPost : gimbalPerformerPost)(decodeURIComponent(planned[1]), body);
     const named = path.match(/^\/api\/cameras\/([^/]+)\/name$/); if (named) return renamePost(decodeURIComponent(named[1]), body);
+    if (path === '/api/obs/names') return answer({ sources: {}, scenes: {}, skipped: [] });     // renaming in the demo already carried through
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);
     if (S.answers['/api/recipe']) {

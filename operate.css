@@ -12,6 +12,9 @@
 .feed .picture .said { position:absolute; inset:0; display:grid; place-items:center; text-align:center; padding:12px; color:#b7c6d4; }
 .feed .line { color:#b7c6d4; font-size:.9rem; margin:6px 0; min-height:1.2em; }
 .feed .buttons { display:flex; flex-wrap:wrap; gap:6px; }
+.feed .follow p { margin:6px 0; } .feed .follow select { max-width:100%; }
+.follow-plan summary { cursor:pointer; color:#b7c6d4; } .follow-rule { display:block; margin:4px 0; }
+.follow-order { margin:6px 0; padding-left:22px; } .follow-order button { padding:0 8px; }
 #controllers { margin:16px 0; }
 #controllers table { border-collapse:collapse; } #controllers td, #controllers th { padding:4px 10px; text-align:left; }
 #chooser label { display:inline-block; margin:4px 12px 4px 0; }

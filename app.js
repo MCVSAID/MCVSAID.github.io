@@ -343,12 +343,12 @@ function moveHere(camera, kind, paired) {
 }
 function renameButton(camera) {
   const button = node('button', 'Rename…'); button.disabled = busy.has(camera.id);
-  button.title = 'Change the name shown for this camera here. Its OBS source and scenes keep their names.';
+  button.title = 'Change this camera\'s name here and in OBS: its source, its scene and its split screens.';
   button.onclick = async () => {
-    const got = await concert.ask({ title: `Rename ${camera.name}`, text: 'It keeps its slot, its settings and its place in OBS, whose source and scenes keep their names. Recordings already on this computer stay in its old folder; new ones go in a folder with the new name.',
+    const got = await concert.ask({ title: `Rename ${camera.name}`, text: 'It keeps its slot, its settings and its place in OBS. Its OBS source and scenes take the new name too, and a default shot naming one of them follows; the programme stays on air. Recordings already on this computer stay in its old folder; new ones go in a folder with the new name.',
       fields: [{ name: 'name', label: 'New name', value: camera.name }], ok: 'Rename' });
     if (!got || got.name.trim() === camera.name) return;
-    try { const done = await api(`/api/cameras/${encodeURIComponent(camera.id)}/name`, { method: 'POST', body: JSON.stringify({ name: got.name }) }); result.textContent = `${done.was} is now ${done.name}.`; }
+    try { const done = await api(`/api/cameras/${encodeURIComponent(camera.id)}/name`, { method: 'POST', body: JSON.stringify({ name: got.name }) }); result.textContent = `${done.was} is now ${done.name}.` + inObs(done.obs); }
     catch (error) { result.textContent = error.message; }
     refresh();
   };
@@ -527,6 +527,28 @@ async function refreshScenes(button) {
       + (done.sources_made.length ? ' A new source shows its picture once that camera is streaming.' : '');
   } catch (error) { scenesSaid = `Could not refresh OBS scenes: ${error.message}`; }
   button.disabled = false; refresh();
+}
+// What renaming did in OBS (scenes.rename), in a sentence; '' when there was nothing to rename.
+function inObs(obs) {
+  if (!obs) return '';
+  if (obs.error) return ` OBS was not changed (${obs.error}): press Refresh names in OBS once it is running.`;
+  const sources = Object.keys(obs.sources || {}).length, scenes = Object.keys(obs.scenes || {}).length;
+  return (sources ? ` In OBS: ${sources} source${sources === 1 ? '' : 's'} and ${scenes} scene${scenes === 1 ? '' : 's'} renamed.` : '')
+    + (obs.skipped || []).map(left => ` ${left.camera} left as it is in OBS: ${left.why}.`).join('');
+}
+async function refreshNames(button) {
+  button.disabled = true; scenesSaid = 'Looking at OBS…'; refresh();
+  try {
+    const done = await api('/api/obs/names', { method: 'POST', body: '{}' });
+    scenesSaid = `${new Date().toLocaleTimeString()}` + (inObs(done) || ' OBS: every camera\'s source already has its name.');
+  } catch (error) { scenesSaid = `Could not refresh names in OBS: ${error.message}`; }
+  button.disabled = false; refresh();
+}
+function namesButton() {
+  const button = node('button', 'Refresh names in OBS');
+  button.title = 'Gives each camera\'s OBS source the camera\'s name here, and its full-screen scene, split screens and face blur scenes the names that go with it. Their contents are not changed, and the programme stays on air.';
+  button.onclick = () => refreshNames(button);
+  return button;
 }
 function scenesButton() {
   const button = node('button', 'Refresh OBS scenes');
@@ -1126,7 +1148,7 @@ async function refresh() {
       const label = node('label', ''); const box = document.createElement('input'); box.type = 'checkbox'; box.checked = sync.enabled;
       box.onchange = async () => { try { await api('/api/settings/obs-sync', { method: 'POST', body: JSON.stringify({ enabled: box.checked }) }); } catch (error) { result.textContent = error.message; } refresh(); };
       label.append(box, node('span', ' Keep camera feeds aligned in OBS automatically')); syncPanel.append(label);
-      const scenesRow = node('p'); scenesRow.append(scenesButton(), node('small', scenesSaid ? ` ${scenesSaid}` : ' Makes a source, a scene and split screens in OBS for any camera that has none.')); syncPanel.append(scenesRow);
+      const scenesRow = node('p'); scenesRow.append(scenesButton(), ' ', namesButton(), node('small', scenesSaid ? ` ${scenesSaid}` : ' Makes a source, a scene and split screens in OBS for any camera that has none, and gives them the cameras\' names.')); syncPanel.append(scenesRow);
       const states = Object.values(sync.cameras || {}), reading = states.filter(s => s.latency_ms != null);
       let summary = sync.problem ? `OBS sync cannot run: ${sync.problem}.`
         : !reading.length ? 'OBS sync: no camera with a readable timing strip is streaming yet.'
@@ -1795,41 +1817,28 @@ async function refresh() {
             speed.onchange = () => aimSpeeds.set(camera.id, Number(speed.value));
             const row = node('div', ''); row.className = 'aim-row'; row.append(pad, speed);
             turn.append(row, node('small', 'Hold an arrow to turn the camera; it stops when you let go, and by itself within half a second if this page or the network goes.'));
+            // Its home position (app 0.9.37's gimbal.point), also on the Operate page: set where it points now, go back there.
+            if (gimbal.home) {
+              const homeLine = node('p', 'Home position: '), home = gimbal.home;
+              const gimbalHome = async (action, label) => {
+                try { await api(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-home`, { method: 'POST', body: JSON.stringify({ action }) }); refresh(); }
+                catch (error) { concert.tell(`${camera.name}: ${label}: ${error.message}`); }
+              };
+              const go = node('button', 'Home'); go.disabled = off || !home.set || home.stale; go.title = 'Turn it back to its home position (stops following)';
+              go.onclick = () => gimbalHome('go', 'Home');
+              const keep = node('button', home.set ? 'Set again' : 'Set home'); keep.disabled = off; keep.title = 'Keep where it points now as its home position';
+              keep.onclick = () => gimbalHome('set', 'Set home');
+              homeLine.append(go, ' ', keep);
+              if (home.set) homeLine.append(node('span', home.stale ? ' · the phone restarted since it was set: set it again' : ` · pan ${home.pan}°, tilt ${home.tilt}°`));
+              turn.append(homeLine);
+            }
             // Following someone (app 0.9.27): the phone finds faces in its own picture and turns the gimbal itself; the
             // arrows take over for a few seconds whenever they are used.
             if ((camera.telemetry || {}).capabilities?.gimbal_follow) {
-              // Whom to follow: nobody, the most prominent face (the phone's own choice), or a performer: an administrator
-              // chooses by name (the People page's "cameras that follow them"); others see only that it follows its performer.
-              const follows = node('p', 'Follow: '), pick = document.createElement('select'); pick.setAttribute('aria-label', 'Whom the gimbal follows'); pick.disabled = off;
-              const choices = [['off', 'Nobody'], ['face', 'The most prominent face']];
-              if (gimbal.choices) for (const performer of gimbal.choices) choices.push([`performer:${performer.id}`, performer.name]);
-              else if (gimbal.performer) choices.push(['performer', 'Its performer']);
-              const chosen = gimbal.choices?.find(p => p.chosen);
-              const now = !gimbal.follow ? 'off' : gimbal.performer ? (chosen ? `performer:${chosen.id}` : 'performer') : 'face';
-              for (const [value, text] of choices) { const option = node('option', text); option.value = value; option.selected = value === now; pick.append(option); }
-              pick.onchange = async () => {
-                const value = pick.value;
-                if (value.startsWith('performer:')) {
-                  try { await api(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-performer`, { method: 'POST', body: JSON.stringify({ performer: value.slice(10) }) }); refresh(); }
-                  catch (error) { concert.tell(`${camera.name}: Follow: ${error.message}`); refresh(); }
-                } else if (value !== 'performer') {
-                  if (gimbal.performer && gimbal.choices) await api(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-performer`, { method: 'POST', body: JSON.stringify({ performer: null }) }).catch(() => {});
-                  send(camera, 'gimbal.follow', value === 'off' ? { on: false } : { on: true, who: 'face' }, value === 'off' ? 'Follow off' : 'Follow the most prominent face');
-                }
-              };
-              follows.append(pick);
-              // How quickly (app 0.9.35): kept by the phone, sent with Follow or on its own while following.
-              if ((camera.telemetry || {}).capabilities?.gimbal_follow_pace) {
-                const pace = document.createElement('select'); pace.setAttribute('aria-label', 'How quickly the gimbal follows'); pace.disabled = off;
-                const paceNow = gimbal.follow?.pace || 'normal';
-                for (const [value, text] of [['calm', 'Calm'], ['normal', 'Normal'], ['quick', 'Quick']]) { const option = node('option', text); option.value = value; option.selected = value === paceNow; pace.append(option); }
-                pace.onchange = () => send(camera, 'gimbal.follow', { on: !!gimbal.follow, pace: pace.value }, `Follow speed: ${pace.value}`);
-                follows.append(node('span', ' Speed: '), pace);
-              }
-              if (gimbal.follow) follows.append(node('span', ` · ${{ searching: 'looking for someone', following: gimbal.follow.hands_on ? 'paused while you aim' : gimbal.follow.by === 'person' ? 'following, by their body (face not seen)' : 'following', lost: 'lost them; still', no_picture: 'no picture to follow by: start the camera' }[gimbal.follow.state] || gimbal.follow.state}`));
-              if (gimbal.performer) follows.append(node('span', gimbal.performer.why ? ` · ${gimbal.performer.why}` : gimbal.performer.seen_seconds != null ? ` · ${gimbal.performer.name || 'its performer'} seen ${gimbal.performer.seen_seconds} s ago` : ''));
-              if (role === 'admin' && gimbal.choices === null) follows.append(node('small', ' Performers can be chosen while they are being recognised (Plus AI, People page).'));
-              turn.append(follows, node('small', 'The phone turns the gimbal to keep that face a little above the middle, and keeps someone who turns away by their body (app 0.9.30); for a performer, the manager recognises them about once a second and points the phone at them. The arrows take over for three seconds whenever you use them.'));
+              // Whom to follow, and its follow plan: follow.js, shared with the Operate page so both are the same setting.
+              turn.append(gimbalFollow.block(camera, { role, off, post: (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) }),
+                send: (c, command, parameters, label) => send(c, command, parameters, label), refresh, tell: message => concert.tell(message) }),
+                node('small', 'The phone turns the gimbal to keep that face a little above the middle, and keeps someone who turns away by their body (app 0.9.30); for performers, the manager recognises them about once a second and points the phone at whom its plan says. The arrows take over for three seconds whenever you use them.'));
             }
             // Aiming from the stage (app 0.9.37, stageaim.py): the wide shot says where someone stands, the room map which
             // way that is from here. Calibrated once: aim it at the middle of the stage with the arrows, then Set.
