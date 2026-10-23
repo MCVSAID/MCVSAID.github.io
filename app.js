@@ -1720,7 +1720,7 @@ async function refresh() {
       if (camera?.cooler) {
         const cooler = camera.cooler, off = !camera.online || busy.has(camera.id);
         const set = (parameters, label) => send(camera, 'cooler.settings', parameters, label);
-        if (cooler.summary) { const line = node('p', cooler.summary); line.className = cooler.address && (!cooler.connected || cooler.fan_refused) ? 'app-version recording-warning' : 'app-version'; card.append(line); }
+        if (cooler.summary) { const line = node('p', cooler.summary); line.className = cooler.address && (!cooler.connected || cooler.fan_refused || cooler.asking_to_pair) ? 'app-version recording-warning' : 'app-version'; card.append(line); }
         if (cooler.address) {
           const fan = document.createElement('select'); fan.setAttribute('aria-label', 'Cooler fan');
           for (const [value, text] of [['smart', 'Smart'], ['overclock_streaming', 'Overclock while streaming'], ['overclock', 'Overclock'], ['silent', 'Silent'], ['manual', 'Fixed speed']]) {
@@ -1795,13 +1795,30 @@ async function refresh() {
             // Following someone (app 0.9.27): the phone finds faces in its own picture and turns the gimbal itself; the
             // arrows take over for a few seconds whenever they are used.
             if ((camera.telemetry || {}).capabilities?.gimbal_follow) {
-              const follows = node('p', ''), label = node('label', ''), box = document.createElement('input'); box.type = 'checkbox';
-              box.checked = !!gimbal.follow; box.disabled = off;
-              box.onchange = () => send(camera, 'gimbal.follow', { on: box.checked }, `Follow ${box.checked ? 'on' : 'off'}`);
-              label.append(box, node('span', ' Follow the most prominent face'));
-              follows.append(label);
+              // Whom to follow: nobody, the most prominent face (the phone's own choice), or a performer: an administrator
+              // chooses by name (the People page's "cameras that follow them"); others see only that it follows its performer.
+              const follows = node('p', 'Follow: '), pick = document.createElement('select'); pick.setAttribute('aria-label', 'Whom the gimbal follows'); pick.disabled = off;
+              const choices = [['off', 'Nobody'], ['face', 'The most prominent face']];
+              if (gimbal.choices) for (const performer of gimbal.choices) choices.push([`performer:${performer.id}`, performer.name]);
+              else if (gimbal.performer) choices.push(['performer', 'Its performer']);
+              const chosen = gimbal.choices?.find(p => p.chosen);
+              const now = !gimbal.follow ? 'off' : gimbal.performer ? (chosen ? `performer:${chosen.id}` : 'performer') : 'face';
+              for (const [value, text] of choices) { const option = node('option', text); option.value = value; option.selected = value === now; pick.append(option); }
+              pick.onchange = async () => {
+                const value = pick.value;
+                if (value.startsWith('performer:')) {
+                  try { await api(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-performer`, { method: 'POST', body: JSON.stringify({ performer: value.slice(10) }) }); refresh(); }
+                  catch (error) { concert.tell(`${camera.name}: Follow: ${error.message}`); refresh(); }
+                } else if (value !== 'performer') {
+                  if (gimbal.performer && gimbal.choices) await api(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-performer`, { method: 'POST', body: JSON.stringify({ performer: null }) }).catch(() => {});
+                  send(camera, 'gimbal.follow', value === 'off' ? { on: false } : { on: true, who: 'face' }, value === 'off' ? 'Follow off' : 'Follow the most prominent face');
+                }
+              };
+              follows.append(pick);
               if (gimbal.follow) follows.append(node('span', ` · ${{ searching: 'looking for someone', following: gimbal.follow.hands_on ? 'paused while you aim' : 'following', lost: 'lost them; still', no_picture: 'no picture to follow by: start the camera' }[gimbal.follow.state] || gimbal.follow.state}`));
-              turn.append(follows, node('small', 'The phone turns the gimbal to keep that face a little above the middle. The arrows take over for three seconds whenever you use them.'));
+              if (gimbal.performer) follows.append(node('span', gimbal.performer.why ? ` · ${gimbal.performer.why}` : gimbal.performer.seen_seconds != null ? ` · ${gimbal.performer.name || 'its performer'} seen ${gimbal.performer.seen_seconds} s ago` : ''));
+              if (role === 'admin' && gimbal.choices === null) follows.append(node('small', ' Performers can be chosen while they are being recognised (Plus AI, People page).'));
+              turn.append(follows, node('small', 'The phone turns the gimbal to keep that face a little above the middle; for a performer, the manager recognises them about once a second and points the phone at them. The arrows take over for three seconds whenever you use them.'));
             }
           }
           // Hung upside down: the arrows are turned round. The picture is turned round on its own, under Picture & stream.
