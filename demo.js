@@ -497,6 +497,16 @@
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
   }
+  function operatePost(main) {
+    // The Operate page's Main stage and Previous shot: as the manager does, a person's choice, held.
+    const d = director();
+    const target = main ? d.default_shot : (d.previous || null);
+    if (!target) return answer({ detail: main ? 'No stage shot is set: choose a default shot on the Director page' : 'No earlier shot to go back to' }, 409);
+    const camera = cams().cameras.find(c => c.id === target || `Cam ${c.name}` === target);
+    d.previous = d.on_air; d.on_air = camera ? camera.id : null; d.scene = camera ? `Cam ${camera.name}` : target;
+    save(); note('In the demo the gimbals are drawn, so nothing turns; the shot changes on the programme monitor.');
+    return answer(d);
+  }
   function coolersPost(kind) {
     // Forget all, or Re-pair all: the simulated phones are already right, so re-pairing gives each its own cooler back,
     // as the manager would from what the phones heard; forgetting clears them.
@@ -533,6 +543,29 @@
     const was = camera.name; camera.name = name; save();
     return answer({ camera_id: id, name, was });
   }
+  function gimbalStagePost(id, body) {
+    // Aiming from the stage (stageaim.py): Set keeps the angles it reports now as the middle of the stage; Centre stage
+    // turns it back to them; Forget drops them. As the manager answers, from the simulated phone's report.
+    const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
+    const g = camera.gimbal, a = camera.telemetry?.gimbal?.attitude;
+    if (!g?.stage) return answer({ detail: 'This camera’s gimbal cannot be aimed from the stage' }, 409);
+    if (!['calibrate', 'centre', 'forget'].includes(body.action)) return answer({ detail: 'action is calibrate, centre or forget' }, 400);
+    if (body.action === 'forget') { Object.assign(g.stage, { calibrated: false, at: null, state: null, why: null }); S.gimbalCentre = null; }
+    else if (body.action === 'calibrate') {
+      if (!a) return answer({ detail: 'Gimbal: the gimbal is not reporting its angles' }, 409);
+      S.gimbalCentre = { pan: a.pan, tilt: a.tilt };
+      Object.assign(g.stage, { calibrated: true, at: now() });
+      note('Calibrated: the manager now turns this gimbal towards whoever the wide shot sees, when it loses them. In the demo the pictures are drawn, so nobody is found in them.');
+    } else {
+      if (!g.stage.calibrated) return answer({ detail: 'Calibrate it first: aim it at the middle of the stage and press Set' }, 409);
+      const centre = S.gimbalCentre || { pan: 0, tilt: -6 };
+      for (const x of [a, g.attitude].filter(Boolean)) { x.pan = centre.pan; x.tilt = centre.tilt; }
+    }
+    save();
+    return answer(g.stage);
+  }
+  // The Operate page's live feeds: the demo's drawn stills (operate.js asks for these when it is here).
+  window.concertDemo = Object.assign(window.concertDemo || {}, { feed: id => `/api/colour/preview/${encodeURIComponent(id)}` });
   let gimbalNoted = false;
   function command(id, body) {
     const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
@@ -571,6 +604,9 @@
         if (what === 'gimbal.settings') for (const k of ['swap', 'invert_pan', 'invert_tilt', 'upside_down']) if (k in p) g[k] = !!p[k];
         if (what === 'gimbal.move' || what === 'gimbal.stop') g.moving = what === 'gimbal.move' && !!(p.pan || p.tilt);
         if (what === 'gimbal.follow') g.follow = p.on ? { state: 'following', hands_on: false } : null;
+        // Its angles, as the simulated phone reports them: the arrows turn them, a point takes them there.
+        if (g.attitude && what === 'gimbal.move') { g.attitude.pan = Math.round(((g.attitude.pan + (p.pan || 0) * 0.27 + 540) % 360 - 180) * 10) / 10; g.attitude.tilt = Math.round(Math.max(-90, Math.min(90, g.attitude.tilt + (p.tilt || 0) * 0.27)) * 10) / 10; }
+        if (g.attitude && what === 'gimbal.point') { g.attitude.pan = p.pan_deg; if ('tilt_deg' in p) g.attitude.tilt = p.tilt_deg; g.point = { state: 'arrived', pan_deg: p.pan_deg, tilt_deg: p.tilt_deg ?? null, pan_left: 0 }; }
         if ('summary' in g) g.summary = (g.moving ? 'Gimbal: connected, moving' : 'Gimbal: connected') + (g.follow ? '; following' : '');
       }
       if (what === 'gimbal.move' && !gimbalNoted) { gimbalNoted = true; note('In the demo the gimbal says it turns, but the pictures are drawn, so nothing moves.'); }
@@ -701,7 +737,10 @@
     if (path === '/api/voice') return voiceShotPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
     const fleet = path.match(/^\/api\/coolers\/(forget|repair)$/); if (fleet) return coolersPost(fleet[1]);
+    if (path === '/api/operate/control') return answer({ camera_id: body.camera_id, sent: body.pan || body.tilt ? 'gimbal.move' : null, zoom_percent: null, said: null });
+    if (path === '/api/operate/main' || path === '/api/operate/previous') return operatePost(path.endsWith('main'));
     const moved = path.match(/^\/api\/cameras\/([^/]+)\/accessory$/); if (moved) return accessoryPost(decodeURIComponent(moved[1]), body);
+    const staged = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-stage$/); if (staged) return gimbalStagePost(decodeURIComponent(staged[1]), body);
     const named = path.match(/^\/api\/cameras\/([^/]+)\/name$/); if (named) return renamePost(decodeURIComponent(named[1]), body);
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);

@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js?v=f9d09ed9afed"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Operate</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/operate.css">
+<body><header><h1>Operate</h1><p>The cameras you choose, live (no look-ahead), steered with an Xbox controller or the buttons.</p></header>
+<form id="login"><label>Manager password <input id="password" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<main id="operate" hidden>
+<div id="operate-bar">
+  <button id="main-stage" title="Put the stage shot (the director's default shot) on air. Controller: View">Main stage</button>
+  <button id="previous" title="Back to the shot before this one. Controller: Y">Previous shot</button>
+  <span class="spacer"></span>
+  <span id="programme" aria-live="polite"></span>
+</div>
+<details id="chooser"><summary>Cameras shown</summary><div id="choices"></div></details>
+<div id="feeds" aria-label="Live pictures of the chosen cameras"></div>
+<section id="controllers"><h2>Controllers</h2><div id="pads"></div>
+<details><summary>Buttons</summary><table>
+<tr><th>Right stick</th><td>Aim (pan and tilt); the further you push, the faster</td></tr>
+<tr><th>Right trigger / left trigger</th><td>Zoom in / out</td></tr>
+<tr><th>A</th><td>Put this camera on air</td></tr>
+<tr><th>B</th><td>Stop the gimbal</td></tr>
+<tr><th>X</th><td>Follow on or off</td></tr>
+<tr><th>Y</th><td>Back to the previous shot</td></tr>
+<tr><th>View (⧉)</th><td>Main stage: the stage shot on air</td></tr>
+<tr><th>LB / RB, or d-pad left / right</th><td>The previous / next camera shown here</td></tr>
+<tr><th>D-pad up / down</th><td>Faster / slower aiming</td></tr>
+</table></details></section>
+</main>
+<pre id="result" aria-live="polite"></pre><script src="/nav.js"></script><script src="/operate.js"></script></body></html>

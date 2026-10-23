@@ -1,0 +1,17 @@
+#operate-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 12px; }
+#operate-bar .spacer { flex:1; }
+#feeds { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap:12px; }
+.feed { background:#18232d; border-radius:10px; padding:10px; border:3px solid transparent; }
+.feed.driven { border-color:var(--driver, #5fb4ee); }
+.feed.on-air { box-shadow:0 0 0 2px #e5484d inset; }
+.feed h2 { font-size:1.05rem; margin:0 0 6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.feed .badge { font-size:.75rem; padding:2px 8px; border-radius:999px; background:#2b3a48; }
+.feed .badge.air { background:#e5484d; color:#fff; }
+.feed .picture { position:relative; aspect-ratio:16/9; background:#0b1117; border-radius:6px; overflow:hidden; }
+.feed .picture img { width:100%; height:100%; object-fit:contain; display:block; }
+.feed .picture .said { position:absolute; inset:0; display:grid; place-items:center; text-align:center; padding:12px; color:#b7c6d4; }
+.feed .line { color:#b7c6d4; font-size:.9rem; margin:6px 0; min-height:1.2em; }
+.feed .buttons { display:flex; flex-wrap:wrap; gap:6px; }
+#controllers { margin:16px 0; }
+#controllers table { border-collapse:collapse; } #controllers td, #controllers th { padding:4px 10px; text-align:left; }
+#chooser label { display:inline-block; margin:4px 12px 4px 0; }

@@ -1831,6 +1831,28 @@ async function refresh() {
               if (role === 'admin' && gimbal.choices === null) follows.append(node('small', ' Performers can be chosen while they are being recognised (Plus AI, People page).'));
               turn.append(follows, node('small', 'The phone turns the gimbal to keep that face a little above the middle, and keeps someone who turns away by their body (app 0.9.30); for a performer, the manager recognises them about once a second and points the phone at them. The arrows take over for three seconds whenever you use them.'));
             }
+            // Aiming from the stage (app 0.9.37, stageaim.py): the wide shot says where someone stands, the room map which
+            // way that is from here. Calibrated once: aim it at the middle of the stage with the arrows, then Set.
+            if (gimbal.stage) {
+              const stage = gimbal.stage, gimbalStage = async (action, label) => {
+                try { await api(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-stage`, { method: 'POST', body: JSON.stringify({ action }) }); refresh(); }
+                catch (error) { result.textContent = `${label}: ${error.message}`; }
+              };
+              const aimed = node('p', 'Aim from the stage: ');
+              const calibrate = node('button', stage.calibrated ? 'Set again' : 'Set: it points at centre stage'); calibrate.disabled = off || !stage.on_map;
+              calibrate.title = stage.on_map ? 'Aim it at the middle of the stage with the arrows first. The manager then turns it towards whoever the wide shot sees, when it has lost them or before the director needs it.' : 'Put this camera on the room map first (Stage Shots, Room map)';
+              calibrate.onclick = () => gimbalStage('calibrate', 'Set centre stage');
+              aimed.append(calibrate);
+              if (stage.calibrated) {
+                const centre = node('button', 'Centre stage'); centre.disabled = off; centre.title = 'Turn it back to the middle of the stage, to check the calibration';
+                centre.onclick = () => gimbalStage('centre', 'Centre stage');
+                const drop = node('button', 'Forget'); drop.disabled = off; drop.onclick = () => gimbalStage('forget', 'Forget the calibration');
+                aimed.append(' ', centre, ' ', drop);
+                if (stage.why) aimed.append(node('span', ` · ${{ following: '', pointing: 'turning it to ', waiting: 'waiting: ', idle: '' }[stage.state] ?? ''}${stage.why}`));
+              } else if (!stage.on_map) aimed.append(node('small', ' Put this camera and the wide camera on the room map first (Stage Shots).'));
+              turn.append(aimed);
+              if (gimbal.attitude) turn.append(node('small', `The phone says its camera points at pan ${gimbal.attitude.pan}°, tilt ${gimbal.attitude.tilt}° (from its rotation sensor; the pan counts from wherever the sensor started, and is kept anchored from the wide shot while it follows someone).`));
+            }
           }
           // Hung upside down: the arrows are turned round. The picture is turned round on its own, under Picture & stream.
           const hung = node('p', ''), hungLabel = node('label', ''), hungBox = document.createElement('input'); hungBox.type = 'checkbox';
