@@ -563,6 +563,7 @@ function editing(panel) {
 // A list or tick box has done its job once it changes; letting go of it lets its panel show the result.
 document.addEventListener('change', event => { if (event.target.matches?.('select, input[type=checkbox], input[type=radio]')) event.target.blur(); });
 // The dashboard's words for the kind of event in use (modes.UI): live music's until the manager has said otherwise.
+let studioSummary = null;                           // Creator Studio's framings, as /api/cameras last gave them
 const words = () => window.concert.mode?.words || { profile: 'band', role: 'instrument', roles: 'instruments', anyone: 'anyone performing', crowd: 'crowd', example: 'banjo, harmonica, pedal steel', performer: 'performer' };
 const capital = text => text.charAt(0).toUpperCase() + text.slice(1);
 // A new kind of event changes what each camera can be given: shown at once.
@@ -578,6 +579,7 @@ async function refresh() {
   try {
     const answer = await api('/api/cameras'); window.concert.feed(answer);
     const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically } = answer;
+    studioSummary = answer.creator || null;          // Creator Studio's framings, for each card's What it shows (shows.js)
     // The cameras in use at this location; those set aside are left out of everything but their own short list.
     const cameras = paired.filter(c => c.in_use !== false), aside = paired.filter(c => c.in_use === false);
     // Show length, and which cameras are not expected to last it at their present load.
@@ -1461,9 +1463,13 @@ async function refresh() {
       const key = camera ? camera.id : `slot-${slot}`;
       const shots = fold(`${key}:shows`, 'What it shows'), picture = fold(`${key}:picture`, 'Picture & stream'), upkeep = fold(`${key}:upkeep`, 'Maintenance');
       if (camera && director?.event_mode?.mode === 'creator') {
-        // Creator Studio: the user's own framings, how close and whom this camera follows (creator.js). The administrator's.
+        // Creator Studio: which framing it leads with, for anyone (shows.js, as on the Operate page); then the rest of its
+        // Studio settings, the administrator's (creator.js).
+        const made = window.whatItShows.build(camera, director, { words, studio: studioSummary, framing: async (id, framing) => {
+          try { await api(`/api/cameras/${encodeURIComponent(id)}/framing`, { method: 'POST', body: JSON.stringify({ framing }) }); } catch (error) { result.textContent = error.message; } refresh(); } });
+        shots.append(...made.element.childNodes);
+        shots.querySelector('summary').append(node('span', ` · ${made.summary}`));
         if (concert.role === 'admin' && window.studioCard) window.studioCard(camera, shots);
-        else shots.append(node('small', 'This camera follows the framings the administrator set up for it.'));
       } else if (camera && concert.role === 'admin') {
         // Particular people, rather than instruments: reference pictures of consenting performers, on the People page.
         const people = node('small', 'Particular performers, and stars: '); const go = document.createElement('a'); go.href = '/people'; go.textContent = 'reference pictures and who this camera follows (People)';

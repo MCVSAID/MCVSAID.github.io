@@ -833,6 +833,16 @@
     if (path === '/api/operate/settings') { if (![12, 24].includes(body.rate)) return answer({ detail: 'rate is 12 or 24' }, 400); S.answers['/api/operate/settings'] = { rate: body.rate }; save(); return answer({ rate: body.rate }); }
     const moved = path.match(/^\/api\/cameras\/([^/]+)\/accessory$/); if (moved) return accessoryPost(decodeURIComponent(moved[1]), body);
     const staged = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-stage$/); if (staged) return gimbalStagePost(decodeURIComponent(staged[1]), body);
+    const framed = path.match(/^\/api\/cameras\/([^/]+)\/framing$/);
+    if (framed) {
+      // Creator Studio: the framing a camera leads with (creator.favour), as the manager answers.
+      const c = cams(), id = decodeURIComponent(framed[1]);
+      if (!c.creator) return answer({ detail: 'Framings are Creator Studio’s: choose it as the kind of event' }, 409);
+      if (body.framing !== null && !c.creator.framings.some(f => f.id === body.framing)) return answer({ detail: 'no such framing' }, 400);
+      const mine = c.creator.cameras[id] || [];
+      c.creator.cameras[id] = body.framing === null ? [] : [body.framing, ...mine.filter(f => f !== body.framing)];
+      save(); return answer(c.creator);
+    }
     const homed = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-home$/); if (homed) return gimbalHomePost(decodeURIComponent(homed[1]), body);
     const planned = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-(plan|performer)$/); if (planned) return (planned[2] === 'plan' ? gimbalPlanPost : gimbalPerformerPost)(decodeURIComponent(planned[1]), body);
     const named = path.match(/^\/api\/cameras\/([^/]+)\/name$/); if (named) return renamePost(decodeURIComponent(named[1]), body);

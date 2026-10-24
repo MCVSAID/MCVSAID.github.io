@@ -62,7 +62,8 @@ async function refresh() {
 const showsContext = {
   words: () => window.concert?.mode?.words || { role: 'instrument', roles: 'instruments', anyone: 'anyone performing', crowd: 'crowd', example: 'banjo, harmonica, pedal steel' },
   ask: dialog => window.concert.ask(dialog), tell: message => { result.textContent = message; },
-  direct: async body => { await act('/api/director', body); refresh(); } };
+  direct: async body => { await act('/api/director', body); refresh(); },
+  framing: async (id, framing) => { await act(`/api/cameras/${encodeURIComponent(id)}/framing`, { framing }); refresh(); } };
 const followContext = camera => ({ role: window.concert?.session?.role || 'operator', off: !camera.online,
   post: (path, body) => api(path, body), send: (c, command, parameters) => send(c.id, command, parameters), refresh, tell: message => { result.textContent = message; } });
 
@@ -130,7 +131,7 @@ function draw() {
     }
     // What it shows: the camera card's own control (shows.js), the same setting; for every camera, gimbal or not.
     const shows = tile.querySelector('.shows');
-    if (director.camera_focus !== undefined && director.event_mode?.mode !== 'creator') window.whatItShows.into(shows, camera, director, showsContext);
+    if (director.camera_focus !== undefined) window.whatItShows.into(shows, camera, director, { ...showsContext, studio: state.creator });
     else { shows.replaceChildren(); delete shows.dataset.signature; }
     // Whom its gimbal follows and its follow plan: the camera card's own control (follow.js), the same setting.
     const follow = tile.querySelector('.follow');
