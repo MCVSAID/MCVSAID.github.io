@@ -154,6 +154,20 @@ window.listenTo = (v, pick, disabled) => {
       line.append(node('small', !sp.enabled ? ' Off: Whisper alone hears every phrase.' : !sp.own ? ' Nothing of your own to listen for yet: add zoom phrases here, or a camera\u2019s own phrases above.' : !sp.runtime || !sp.installed ? ' Not set up: its two steps are in AI assistance above.'
         : sp.problem ? ` Not working: ${sp.problem}. Whisper alone meanwhile.` : sp.on ? ` Listening for ${quoted(sp.phrases)}: acted on as each ends, a fifth of a second or so.` : ' Nothing of your own to listen for yet.'));
       box.append(line);
+      // Spotted on the phone itself (app 0.9.41): only a phone with its cooler connected, pausing itself when warm; the
+      // spotter here goes on hearing the same sound from the relay meanwhile.
+      const phones = v.phone_spotters || [];
+      if (phones.length && sp.own) {
+        const words = { listening: 'listening on the phone', paused_warm: 'paused: the phone is warm (heard from the relay meanwhile)', paused_no_cooler: 'paused: its cooler is not connected (heard from the relay meanwhile)',
+          downloading: 'fetching its model from this computer', loading: 'loading its model', no_model: 'waiting for its model (set up the spotter here first)', off: 'off' };
+        for (const phone of phones) {
+          const row = node('p', ''); row.className = 'recipe-load-row';
+          row.append(checkbox(`Spot them on ${phone.name} itself`, phone.on, on => send({ phone_spotter: { [phone.id]: on } }), !phone.cooled && !phone.on));
+          const s = phone.spotter || {};
+          row.append(node('small', !phone.cooled && !phone.on ? ' Only a phone with its cooler connected.' : phone.on ? ` ${s.state === 'failed' ? `not working: ${s.problem}` : words[s.state] || s.state || 'starting'}${s.spotted ? ` · ${s.spotted} spotted` : ''}` : ' A quarter to a third of a second sooner than from the relay.'));
+          box.append(row);
+        }
+      }
     }
     box.append(actions, node('small', 'Called like a shot (“give me a close up”, “camera, zoom in”) or said alone (“Close up!”); with a shot call (“cut to the stove, close up”) it zooms the camera just called. A phone with app 0.9.38 glides there, handing over to its telephoto on the way; an older one changes at once. The director holds a camera on air while it zooms.'));
     return box;
