@@ -258,12 +258,12 @@
     box.append(cues);
     if (v.enabled) {
       const where = node('p', ''); where.className = 'recipe-load-row';
-      const device = document.createElement('input'); device.type = 'text'; device.value = v.device; device.size = 24; device.placeholder = 'the programme’s sound'; device.setAttribute('aria-label', 'Microphone input to listen to');
+      const device = window.listenTo ? window.listenTo(v, name => voice({ device: name })) : document.createElement('span');
       const model = document.createElement('select'); model.setAttribute('aria-label', 'Speech model');
       for (const [name, size] of v.models) { const o = node('option', `Whisper ${name} (${size})${name === 'small.en' ? ', the default' : ', for a smaller computer'}`); o.value = name; o.selected = name === v.model; model.append(o); }
       model.onchange = () => voice({ model: model.value });
-      where.append(node('span', 'Listen to '), device, button('Save', () => voice({ device: device.value.trim() })), model);
-      box.append(where, node('small', 'Blank: the programme’s sound, as listening for instruments hears it (the cook’s microphone monitored to it in OBS). Or the name of a sound input on this computer that has the cook’s microphone.'));
+      where.append(node('span', 'Listen to '), device, model);
+      box.append(where, node('small', 'The cook’s own microphone hears them as they speak; the programme’s sound is what OBS sends to BlackHole, behind by as much as the programme is.'));
       const status = node('p', '');
       if (v.problem || !v.runtime || !v.installed) { status.append(node('span', `Not listening yet: ${v.problem || (!v.runtime ? 'speech recognition is not installed' : 'the speech model is not downloaded')}. Set it up in `), toDirector(), node('span', '.')); status.className = 'recording-warning'; }
       else status.append(node('span', v.listening ? `Listening to ${v.source}.` : 'Ready.'));

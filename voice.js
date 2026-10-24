@@ -5,6 +5,23 @@
 // sure a call must be, what was heard and what it did, and a box to try a phrase. Each camera's card says what it
 // answers to through window.voiceCard. Heard by the same listening as Cooking's spoken cues (speech.py).
 // Uses app.js's api(), node(), editing(), part, role and csrf.
+// What the listening hears, chosen from the computer's own sound inputs (the manager lists them: speech.look_for_inputs),
+// for the voice panel here and the Recipe page: the programme's sound, or a microphone. A saved one not connected now
+// stays in the list, said to be missing. `pick(name)` is called with the choice ('' for the programme).
+window.listenTo = (v, pick, disabled) => {
+  const select = document.createElement('select'); select.className = 'listen-to'; select.setAttribute('aria-label', 'What to listen to'); select.disabled = !!disabled;
+  const programme = v.programme_input || '';
+  const option = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; o.selected = value === (v.device || ''); select.append(o); };
+  option('', `The programme’s sound${programme ? ` (${programme}, what OBS monitors)` : ''}: as far behind as the programme`);
+  const inputs = (v.inputs || []).filter(name => name !== programme);
+  for (const name of inputs) option(name, name);
+  if (v.device && !inputs.includes(v.device) && v.device !== programme) option(v.device, `${v.device} (not connected now)`);
+  if (v.device && v.device === programme) option(programme, `${programme} (the programme’s sound)`);
+  if (!v.inputs) { const o = document.createElement('option'); o.disabled = true; o.textContent = 'Looking for this computer’s microphones…'; select.append(o); }
+  select.onchange = () => pick(select.value);
+  return select;
+};
+
 (() => {
   const panel = document.querySelector('#voice-shots');
   if (!panel) return;
@@ -39,16 +56,16 @@
     const box = node('div', '');
     if (!v.enabled) return box;
     const where = node('p', ''); where.className = 'recipe-load-row';
-    const device = document.createElement('input'); device.type = 'text'; device.value = v.device; device.size = 24; device.placeholder = 'the programme’s sound'; device.setAttribute('aria-label', 'Microphone input to listen to');
+    const device = window.listenTo(v, name => send({ device: name }, name ? `Listening to ${name}.` : 'Listening to the programme’s sound.'), busy);
     const model = document.createElement('select'); model.setAttribute('aria-label', 'Speech model');
     for (const [name, size] of v.models) { const o = node('option', `Whisper ${name} (${size})${name === 'small.en' ? ', the default' : ', for a smaller computer'}`); o.value = name; o.selected = name === v.model; model.append(o); }
     model.onchange = () => send({ model: model.value });
-    where.append(node('span', 'Listen to '), device, button('Save', () => send({ device: device.value.trim() })), model);
+    where.append(node('span', 'Listen to '), device, model);
     const status = node('p', '');
     if (!v.listening) status.append(node('span', 'Not listening: nothing to act on in this kind of event while shot calls are off.'));
     else if (v.problem || !v.runtime || !v.installed) { status.textContent = `Not listening yet: ${v.problem || (!v.runtime ? 'speech recognition is not installed' : 'the speech model is not downloaded')}. Set it up in AI assistance above.`; status.className = 'recording-warning'; }
     else status.textContent = `Listening to ${v.source}.`;
-    box.append(where, node('small', 'Blank: the programme’s sound (the host’s microphone monitored to it in OBS). Or the name of a sound input on this computer that has the host’s microphone.'), status);
+    box.append(where, node('small', 'The microphone the host speaks into hears them as they speak; the programme’s sound is what OBS sends to BlackHole, behind by as much as the programme is.'), status);
     // Heard from the programme, a voice call is acted on as late as the programme runs behind: say so, loudly.
     if (!v.device && v.programme_behind_ms > 1000) {
       const late = node('p', `Listening to the programme’s sound, which runs ${(v.programme_behind_ms / 1000).toFixed(1)} s behind you (feed alignment and its look-ahead): every voice call is acted on that much late. Name the microphone you speak into above to have calls acted on as you say them.`);

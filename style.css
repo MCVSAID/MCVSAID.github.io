@@ -69,6 +69,8 @@ main section > h2, #devices-setup > h2 { margin:18px 0 6px; font-size:1.25rem; }
 .camera-state { font-weight:600; margin:4px 0 8px; } .camera-state.online::before { content:'● '; color:#6fcf97; } .camera-state.offline::before { content:'● '; color:#e2725b; }
 .camera-controls { display:flex; flex-wrap:wrap; gap:2px; margin:8px 0; }
 .aim-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
+/* What the listening hears (voice.js listenTo): its long first choice never widens the page. */
+select.listen-to { max-width:100%; min-width:0; text-overflow:ellipsis; }
 /* Which lens makes the picture (lens.js): coloured by lens. */
 .lens-chip { display:inline-block; padding:1px 8px; border-radius:999px; font-size:.85em; background:#2b3a48; color:#e6eef5; }
 .lens-chip.telephoto { background:#5b3f7a; } .lens-chip.ultrawide { background:#2f5a46; }
