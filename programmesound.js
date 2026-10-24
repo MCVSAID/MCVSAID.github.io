@@ -6,9 +6,9 @@
   if (!panel) return;
   let state = null, drawnFrom = '', said = '', busy = false;
 
-  async function send(body) {
-    busy = true; said = 'Saving…'; paint(true);
-    try { state = await api('/api/programme-sound', { method: 'POST', body: JSON.stringify(body) }); said = 'Saved.'; }
+  async function send(body, where = '/api/programme-sound', saying = 'Saving…', done = 'Saved.') {
+    busy = true; said = saying; paint(true);
+    try { state = await api(where, { method: 'POST', body: JSON.stringify(body) }); said = done; }
     catch (error) { said = error.message; }
     finally { busy = false; paint(true); }
   }
@@ -60,8 +60,30 @@
     const ms = document.createElement('input'); ms.type = 'number'; ms.min = -400; ms.max = 400; ms.step = 10; ms.value = state.lip_sync_ms || 0; ms.setAttribute('aria-label', 'Lip sync, milliseconds');
     const setLips = document.createElement('button'); setLips.textContent = 'Set'; setLips.disabled = busy; setLips.onclick = () => send({ lip_sync_ms: Number(ms.value) || 0 });
     lips.append(node('span', 'Lip sync: every camera’s sound '), ms, node('span', ' ms '), setLips,
-      node('small', ' Negative moves the sound earlier: try −100 if voices come after the mouths, and adjust by ear on the programme.'));
+      node('small', ' Negative moves the sound earlier: try −100 if voices come after the mouths, and adjust by ear on the programme. A camera measured by Calibrate sync uses its own instead.'));
     parts.push(lips);
+    // Calibrate sync (avsync.py): a phone or tablet flashes and beeps in front of the cameras; each one's sound is
+    // measured against its own picture and set as its own lip sync.
+    const calibrate = node('div', ''); calibrate.className = 'recipe-load-row';
+    const page = `${location.origin}${state.flash_page || '/sync-flash'}`;
+    const open = node('a', page); open.href = page; open.target = '_blank'; open.rel = 'noopener';
+    const measure = document.createElement('button'); measure.textContent = 'Measure'; measure.disabled = busy;
+    measure.onclick = () => send({}, '/api/sync/calibrate', 'Measuring the last 12 s of each camera…', 'Measured.');
+    const clear = document.createElement('button'); clear.textContent = 'Forget measurements'; clear.disabled = busy || !state.cameras.some(c => c.calibrated_ms != null);
+    clear.onclick = () => send({ clear: true }, '/api/sync/calibrate', 'Forgetting…', 'Every camera is back on the one lip sync.');
+    const how = node('p', 'Calibrate sync: open '); how.append(open, node('span', ' on a phone or tablet, turn its sound up, press Start flashing, and hold it where the cameras see it for 15 s (in front of each in turn, or where all of them see it). Then press '), measure, node('span', ' '), clear);
+    calibrate.append(how);
+    const cal = state.calibration;
+    const results = node('ul', '');
+    for (const c of state.cameras) {
+      const r = cal && cal.cameras ? cal.cameras[c.name] : null;
+      const text = r ? (r.set_ms != null ? `sound was ${Math.abs(r.offset_ms)} ms ${r.offset_ms >= 0 ? 'after' : 'before'} the picture: set to ${r.set_ms} ms (${r.pairs} flashes, ±${r.spread_ms} ms)` : `not measured: ${r.why}`)
+        : c.calibrated_ms != null ? `lip sync ${c.calibrated_ms} ms, as measured` : `lip sync ${c.lip_sync_ms} ms (every camera’s)`;
+      const line = node('li', `${c.name}: ${text}`); if (r && r.set_ms == null) line.className = 'recording-warning';
+      results.append(line);
+    }
+    calibrate.append(results);
+    parts.push(calibrate);
     const message = node('p', said); message.setAttribute('aria-live', 'polite'); if (/not |need|fail|error|no such/i.test(said)) message.className = 'recording-warning';
     parts.push(message);
     panel.replaceChildren(...parts);

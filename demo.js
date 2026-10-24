@@ -557,8 +557,10 @@
     const auto = chosen?.others === 'auto', open = list.find(c => c.id === chosen?.camera)?.name;
     return { lip_sync_ms: S.lipSync || 0, camera: chosen?.camera || null, others: chosen?.others || 'muted',
       automix: auto ? { open, heard: open, clarity_db: Object.fromEntries(list.slice(0, 3).map((c, i) => [c.name, [14.5, 4.2, 1.8][i]])), changes: 3 } : null, measured: chosen ? { at: Date.now() / 1000 - 40, readings: {}, moved: list[2] ? { [list[2].name]: -6 } : {} } : null,
+      calibration: S.calibration || null, flash_page: '/sync-flash',
       cameras: list.map((c, i) => ({ id: c.id, name: c.name, in_programme: !chosen || c.id === chosen.camera || chosen.others === 'aligned',
-        why: !chosen || c.id === chosen.camera || chosen.others === 'aligned' ? null : 'programme sound comes from the chosen camera alone', trim_ms: chosen && i === 2 ? -6 : null })) };
+        why: !chosen || c.id === chosen.camera || chosen.others === 'aligned' ? null : 'programme sound comes from the chosen camera alone', trim_ms: chosen && i === 2 ? -6 : null,
+        lip_sync_ms: S.calibrated?.[c.id] ?? (S.lipSync || 0), calibrated_ms: S.calibrated?.[c.id] ?? null })) };
   }
   function operatePost(main) {
     // The Operate page's Main stage and Previous shot: as the manager does, a person's choice, held.
@@ -855,6 +857,18 @@
       if ('lip_sync_ms' in body) { S.lipSync = Math.max(-400, Math.min(400, Number(body.lip_sync_ms) || 0)); save(); return answer(programmeSound()); }
       if (body.others && !['aligned', 'muted', 'auto'].includes(body.others)) return answer({ detail: 'others is aligned, muted or auto' }, 400);
       S.programmeSound = body.camera ? { camera: body.camera, others: body.others || 'muted' } : null;
+      save(); return answer(programmeSound());
+    }
+    if (path === '/api/sync/calibrate') {
+      // Calibrate sync (avsync.py), as the manager answers: in the demo the first three cameras saw the flashes.
+      if (body.clear) { S.calibrated = null; S.calibration = null; save(); return answer(programmeSound()); }
+      const list = (cams()?.cameras || []).filter(c => c.id), found = {}, set = {};
+      list.forEach((c, i) => {
+        const late = [95, 140, 60][i];
+        if (late == null) found[c.name] = { why: 'saw 0 flashes (hold the sync page where the camera sees it)', flashes: 0, beeps: 9 };
+        else { found[c.name] = { offset_ms: late, pairs: 9, spread_ms: 6.5, set_ms: -late }; set[c.id] = -late; }
+      });
+      S.calibrated = set; S.calibration = { at: Date.now() / 1000, cameras: found };
       save(); return answer(programmeSound());
     }
     if (path === '/api/explain') return explainPost(body);
