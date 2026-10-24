@@ -28,3 +28,10 @@
 #controllers { margin:16px 0; }
 #controllers table { border-collapse:collapse; } #controllers td, #controllers th { padding:4px 10px; text-align:left; }
 #chooser label { display:inline-block; margin:4px 12px 4px 0; }
+/* On-screen controls: aim while held, zoom while held. Big enough for a finger. */
+.feed .onscreen { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin:8px 0 2px; touch-action:none; user-select:none; }
+.feed .onscreen[hidden] { display:none; }
+.feed .onscreen .aim { display:grid; grid-template-columns:repeat(3, 44px); grid-template-rows:repeat(3, 40px); gap:4px; }
+.feed .onscreen .zoom { display:flex; align-items:center; gap:6px; } .feed .onscreen .zoom span { color:#b7c6d4; }
+.feed .onscreen button { min-width:44px; min-height:40px; padding:0; font-size:1.1rem; }
+#operate-bar .danger { border-color:#b4232a; }

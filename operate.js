@@ -72,6 +72,7 @@ function draw() {
   const shown = chosen(), director = state.director || {};
   const name = id => state.cameras.find(c => c.id === id)?.name || id;
   document.querySelector('#programme').textContent = director.pair ? `On air: ${director.pair.map(name).join(' + ')}` : director.on_air ? `On air: ${name(director.on_air)}` : director.scene ? `On air: ${director.scene}` : '';
+  drawProgramme(director);
   document.querySelector('#main-stage').disabled = !director.default_shot;
   document.querySelector('#main-stage').title = director.default_shot ? `Put ${director.default_shot} on air. Controller: View` : 'No stage shot is set: choose a default shot on the Director page';
   // The list of cameras to show.
@@ -93,7 +94,7 @@ function draw() {
       img.onerror = () => { said.hidden = false; said.textContent = 'No live picture (is the camera streaming, and the relay on?). Trying again…'; setTimeout(() => { img.src = feed(camera.id, true); }, 3000); };
       img.src = feed(camera.id);
       picture.append(img, said);
-      tile.append(node('h2'), picture, node('p', '', 'line'), node('div', undefined, 'buttons'), node('div', undefined, 'shows'), node('div', undefined, 'follow'));
+      tile.append(node('h2'), picture, onscreenPad(camera.id), node('p', '', 'line'), node('div', undefined, 'buttons'), node('div', undefined, 'shows'), node('div', undefined, 'follow'));
       tile.onclick = event => { if (event.target.closest('button')) return; const index = [...drives.keys()][0]; if (index !== undefined) { drives.set(index, camera.id); draw(); } };
       feeds.append(tile); tiles.set(camera.id, tile);
     }
@@ -114,6 +115,16 @@ function draw() {
     const buttons = tile.querySelector('.buttons'); buttons.replaceChildren();
     const take = node('button', onAir ? 'On air' : 'Put on air'); take.disabled = onAir || !camera.online; take.onclick = () => act('/api/director', { take: camera.id }).then(refresh);
     buttons.append(take);
+    // Back to no zoom (1x), kept on the phone, for a camera left zoomed in.
+    if (camera.online && (t.zoom_percent || 100) !== 100) {
+      const reset = node('button', 'Reset zoom'); reset.title = `Back to 1x (now ${((t.zoom_live_percent || t.zoom_percent) / 100).toFixed(1)}x), and kept on the phone`;
+      reset.onclick = () => resetZoom(camera, t);
+      buttons.append(reset);
+    }
+    const pad = tile.querySelector('.onscreen');
+    pad.hidden = !onscreen;
+    for (const b of pad.querySelectorAll('[data-pan], [data-tilt]')) b.disabled = !camera.online || !gimbal?.connected;
+    for (const b of pad.querySelectorAll('[data-zoom]')) b.disabled = !camera.online;
     // Arming, streaming and recording, as on its card: only what fits the camera's state; stopping asks first.
     if (camera.online) buttons.append(...capture(camera, t));
     if (gimbal?.connected) {
@@ -178,6 +189,65 @@ function temperature(camera) {
   chip.setAttribute('aria-label', chip.title);
   if (h.level !== 'ok') chip.textContent += ` ${h.level}`;
   return chip;
+}
+
+// Reset zoom: a phone that zooms by itself glides back to 1x; every phone is then given 1x as its zoom, which it keeps
+// (the Pixel 8 had kept a zoom it was left at, 2026-10-24).
+async function resetZoom(camera, t) {
+  if (t.capabilities?.zoom_ramp && (t.streaming || t.recording)) await send(camera.id, 'camera.zoom', { to_percent: 100, seconds: 0.6 });
+  await send(camera.id, 'camera.lens', { zoom_percent: 100 });
+  refresh();
+}
+
+// On-screen controls (a choice kept in this browser): under each picture, arrows that aim its gimbal while held and
+// buttons that zoom while held, sent as a controller's readings are (/api/operate/control), for a person without one.
+let onscreen = false;
+try { onscreen = localStorage.getItem('operate.onscreen') === '1'; } catch (error) { /* off */ }
+document.querySelector('#onscreen').checked = onscreen;
+document.querySelector('#onscreen').onchange = event => { onscreen = event.target.checked; try { localStorage.setItem('operate.onscreen', onscreen ? '1' : '0'); } catch (error) { /* this visit */ } draw(); };
+const HELD_PAN = 45, HELD_ZOOM = 0.6;
+function onscreenPad(id) {
+  // Made once with the tile and never redrawn, so a press held across a refresh is let go of properly.
+  const pad = node('div', undefined, 'onscreen'); pad.hidden = true;
+  let timer = null, reading = null;
+  const sendReading = () => api('/api/operate/control', { camera_id: id, ...reading }).catch(error => { if (!/rate limit/i.test(error.message)) result.textContent = error.message; });
+  const release = () => { if (!timer) return; clearInterval(timer); timer = null; reading = { pan: 0, tilt: 0, zoom: 0 }; sendReading(); };
+  const hold = (label, title, values, kind) => {
+    const b = node('button', label); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title); b.dataset[kind] = '1';
+    b.onpointerdown = event => { event.preventDefault(); b.setPointerCapture?.(event.pointerId); reading = { pan: 0, tilt: 0, zoom: 0, ...values }; sendReading(); clearInterval(timer); timer = setInterval(sendReading, 120); };
+    b.onpointerup = b.onpointercancel = b.onlostpointercapture = release;
+    b.oncontextmenu = event => event.preventDefault();
+    return b;
+  };
+  const aim = node('div', undefined, 'aim');
+  aim.append(node('span'), hold('▲', 'Tilt up (hold)', { tilt: HELD_PAN }, 'tilt'), node('span'),
+    hold('◀', 'Pan left (hold)', { pan: -HELD_PAN }, 'pan'), hold('■', 'Stop the gimbal', { pan: 0, tilt: 0 }, 'pan'), hold('▶', 'Pan right (hold)', { pan: HELD_PAN }, 'pan'),
+    node('span'), hold('▼', 'Tilt down (hold)', { tilt: -HELD_PAN }, 'tilt'), node('span'));
+  const zoom = node('div', undefined, 'zoom');
+  zoom.append(hold('−', 'Zoom out (hold)', { zoom: -HELD_ZOOM }, 'zoom'), node('span', 'Zoom'), hold('+', 'Zoom in (hold)', { zoom: HELD_ZOOM }, 'zoom'));
+  pad.append(aim, zoom);
+  window.addEventListener('blur', release);
+  return pad;
+}
+
+// The programme: recorded to a file, and OBS's own stream, as on the Show page. Stopping either asks first.
+document.querySelector('#record').onclick = async () => {
+  const recording = state?.director?.recording;
+  if (recording && !await window.concert.sure('Stop recording the programme? The file is finished and checked.', { ok: 'Stop recording', danger: true })) return;
+  await act('/api/director', { record: !recording }); refresh();
+};
+document.querySelector('#stream').onclick = async () => {
+  const live = state?.director?.streaming;
+  if (!await window.concert.sure(live ? 'Stop OBS streaming? Viewers lose the programme.' : 'Start OBS streaming to the service set up in OBS? The programme goes out to its audience.', { ok: live ? 'Stop stream' : 'Start stream', danger: !!live })) return;
+  await act('/api/director', { stream: !live }); refresh();
+};
+function drawProgramme(director) {
+  const record = document.querySelector('#record'), stream = document.querySelector('#stream');
+  const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+  record.textContent = director.recording ? `Stop recording ${clock(director.recording.seconds || 0)}` : 'Record programme';
+  record.classList.toggle('danger', !!director.recording);
+  stream.textContent = director.streaming ? `Stop stream ${clock(director.streaming.seconds || 0)}${director.streaming.reconnecting ? ' · reconnecting' : ''}` : 'Start stream';
+  stream.classList.toggle('danger', !!director.streaming);
 }
 
 function goHome(id) { return act(`/api/cameras/${encodeURIComponent(id)}/gimbal-home`, { action: 'go' }).then(refresh); }
