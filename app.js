@@ -1691,6 +1691,14 @@ async function refresh() {
         const cooler = camera.cooler, off = !camera.online || busy.has(camera.id);
         const set = (parameters, label) => send(camera, 'cooler.settings', parameters, label);
         if (cooler.summary) { const line = node('p', cooler.summary); line.className = cooler.address && (!cooler.connected || cooler.fan_refused || cooler.asking_to_pair) ? 'app-version recording-warning' : 'app-version'; card.append(line); }
+        // Since when it has been on or off, and why it last dropped (Manager.observe_cooler).
+        const h = cooler.history;
+        if (h && cooler.address) {
+          const since = new Date(h.since * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const lasted = s => s == null ? '' : s >= 3600 ? `${Math.round(s / 360) / 10} h` : s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`;
+          card.append(node('small', h.connected ? `Cooler connected since ${since}${h.after_seconds != null ? ` (off ${lasted(h.after_seconds)} before)` : ''}.` :
+            `Cooler off since ${since}${h.after_seconds != null ? `, after ${lasted(h.after_seconds)} on` : ''}${h.why ? ` (${h.why})` : ''}. If it stays off, press its button to switch it on; once connected, the phone switches its Auto Shutdown off.`));
+        }
         if (cooler.address) {
           const fan = document.createElement('select'); fan.setAttribute('aria-label', 'Cooler fan');
           for (const [value, text] of [['smart', 'Smart'], ['overclock_streaming', 'Overclock while streaming'], ['overclock', 'Overclock'], ['silent', 'Silent'], ['manual', 'Fixed speed']]) {
