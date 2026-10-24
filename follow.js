@@ -42,8 +42,10 @@
     // How quickly (app 0.9.35): kept by the phone, sent with Follow or on its own while following.
     if ((camera.telemetry || {}).capabilities?.gimbal_follow_pace) {
       const pace = document.createElement('select'); pace.setAttribute('aria-label', 'How quickly the gimbal follows'); pace.disabled = ctx.off;
-      for (const [value, text] of [['calm', 'Calm'], ['normal', 'Normal'], ['quick', 'Quick']]) { const option = node('option', text); option.value = value; option.selected = value === (gimbal.follow?.pace || 'normal'); pace.append(option); }
-      pace.onchange = () => ctx.send(camera, 'gimbal.follow', { on: !!gimbal.follow, pace: pace.value }, `Follow speed: ${pace.value}`);
+      // By zoom (app 0.9.44): quick at 1x, easing to normal by 3x, where the same turn moves the shot three times as far.
+      const paces = [['calm', 'Calm'], ['normal', 'Normal'], ['quick', 'Quick'], ...((camera.telemetry || {}).capabilities?.gimbal_pace_zoom ? [['zoom', 'By zoom: quick at 1x, normal at 3x']] : [])];
+      for (const [value, text] of paces) { const option = node('option', text); option.value = value; option.selected = value === (gimbal.follow?.pace || 'normal'); pace.append(option); }
+      pace.onchange = () => ctx.send(camera, 'gimbal.follow', { on: !!gimbal.follow, pace: pace.value }, `Follow speed: ${pace.value === 'zoom' ? 'by zoom' : pace.value}`);
       follows.append(node('span', ' Speed: '), pace);
     }
     // How it is going, and why it is on whom it is.
