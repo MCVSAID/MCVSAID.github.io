@@ -15,7 +15,15 @@ window.listenTo = (v, pick, disabled) => {
   option('', `The programme’s sound${programme ? ` (${programme}, what OBS monitors)` : ''}: as far behind as the programme`);
   const inputs = (v.inputs || []).filter(name => name !== programme);
   for (const name of inputs) option(name, name);
-  if (v.device && !inputs.includes(v.device) && v.device !== programme) option(v.device, `${v.device} (not connected now)`);
+  // A camera's own microphone, live from the camera relay: heard as the host speaks near it, not behind with the programme.
+  const cameras = v.cameras || [];
+  if (cameras.length) {
+    const group = document.createElement('optgroup'); group.label = 'A camera’s own microphone (live, from its stream)';
+    for (const c of cameras) { const o = document.createElement('option'); o.value = `camera:${c.id}`; o.textContent = `${c.name}’s microphone`; o.selected = o.value === v.device; group.append(o); }
+    select.append(group);
+  }
+  if (v.device && !inputs.includes(v.device) && v.device !== programme && !(v.device.startsWith('camera:') && cameras.some(c => `camera:${c.id}` === v.device)))
+    option(v.device, v.device.startsWith('camera:') ? 'A camera’s microphone (needs the camera relay on)' : `${v.device} (not connected now)`);
   if (v.device && v.device === programme) option(programme, `${programme} (the programme’s sound)`);
   if (!v.inputs) { const o = document.createElement('option'); o.disabled = true; o.textContent = 'Looking for this computer’s microphones…'; select.append(o); }
   select.onchange = () => pick(select.value);
