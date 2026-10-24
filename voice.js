@@ -49,6 +49,11 @@
     else if (v.problem || !v.runtime || !v.installed) { status.textContent = `Not listening yet: ${v.problem || (!v.runtime ? 'speech recognition is not installed' : 'the speech model is not downloaded')}. Set it up in AI assistance above.`; status.className = 'recording-warning'; }
     else status.textContent = `Listening to ${v.source}.`;
     box.append(where, node('small', 'Blank: the programme’s sound (the host’s microphone monitored to it in OBS). Or the name of a sound input on this computer that has the host’s microphone.'), status);
+    // Heard from the programme, a voice call is acted on as late as the programme runs behind: say so, loudly.
+    if (!v.device && v.programme_behind_ms > 1000) {
+      const late = node('p', `Listening to the programme’s sound, which runs ${(v.programme_behind_ms / 1000).toFixed(1)} s behind you (feed alignment and its look-ahead): every voice call is acted on that much late. Name the microphone you speak into above to have calls acted on as you say them.`);
+      late.className = 'recording-warning'; box.append(late);
+    }
     return box;
   }
 

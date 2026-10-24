@@ -669,6 +669,12 @@ async function refresh() {
         const hold = document.createElement('input'); hold.type = 'number'; hold.min = 0.5; hold.max = 60; hold.step = 0.5; hold.value = director.gaze_min_hold_seconds; hold.disabled = !gaze.enabled; hold.setAttribute('aria-label', 'Least time on air for a shot chosen by gaze, seconds');
         const holdSet = node('button', 'Set'); holdSet.disabled = !gaze.enabled; holdSet.onclick = () => direct({ gaze_min_hold_seconds: Number(hold.value) });
         holdRow.append(hold, node('span', ' s, so a glance does not cut '), holdSet); settings.append(holdRow);
+        // A look into a camera ends the hold on a chosen shot: the host brings the camera back to them with no call.
+        const overRow = node('label', 'A new look into a camera ends the hold '), over = document.createElement('select'); over.disabled = !gaze.enabled;
+        for (const [value, text] of [['off', 'never: a chosen shot is held its full time'], ['calls', 'after a called-out shot (“cut to the stove”)'], ['all', 'after any chosen shot, called or by hand']]) { const o = node('option', text); o.value = value; o.selected = (director.gaze_overrides || 'off') === value; over.append(o); }
+        over.onchange = () => direct({ gaze_overrides: over.value });
+        overRow.append(over); settings.append(overRow);
+        settings.append(node('small', 'Only a look that begins after the shot was chosen counts, so looking into the camera while calling a shot does not undo the call. By default after called-out shots in Cooking and Creator Studio, never elsewhere.'));
         if (gaze.enabled && gaze.minutes != null) {
           // How well the cut follows the eyes, over the last few minutes.
           const value = (v, unit, digits = 1) => v == null ? '–' : `${Number(v).toFixed(digits)}${unit}`;
