@@ -15,24 +15,26 @@
   const capital = text => text.charAt(0).toUpperCase() + text.slice(1);
   const FOCUS = [['', 'the same as usual'], ['face_hands', 'the face and hands together'], ['hands', 'the hands'], ['face', 'the face'], ['chest', 'head and chest'], ['waist', 'head to waist'], ['person', 'the whole person']];
 
-  // Creator Studio: which of the user's framings the camera leads with, or the whole person. The rest of its Studio
-  // settings (closeness, whom it follows, every framing it may use) stay the administrator's, in the Studio editor.
+  // Creator Studio: which of the user's framings the camera shows, alone, or the whole person. The rest of its Studio
+  // settings (closeness, whom it follows, the framings it falls back on) stay the administrator's, in the Studio editor.
   function framings(camera, studio, ctx) {
     const box = node('div', ''), all = studio?.framings || [], mine = studio?.cameras?.[camera.id] || [];
     const name = id => all.find(f => f.id === id)?.name || id;
-    const lead = mine[0] || null;
+    const lead = studio?.only?.[camera.id] || null;
     const line = node('div', ''); line.className = 'framing-choice';
     const choice = (id, text) => {
-      const b = node('button', text); b.type = 'button'; b.setAttribute('aria-pressed', String(id === lead));
-      if (id === lead) b.className = 'chosen';
+      const chosen = id === lead && (id !== null || !mine.length);            // Whole person: chosen when nothing else is set
+      const b = node('button', text); b.type = 'button'; b.setAttribute('aria-pressed', String(chosen));
+      if (chosen) b.className = 'chosen';
       b.onclick = () => ctx.framing(camera.id, id);
       return b;
     };
     line.append(choice(null, 'Whole person'), ...all.map(f => choice(f.id, f.name)));
-    box.append(node('p', 'Leads with:'), line);
-    if (mine.length > 1) box.append(node('small', `Then, when that is not in shot: ${mine.slice(1).map(name).join(', ')}.`));
+    box.append(node('p', 'Shows:'), line);
+    if (lead) box.append(node('small', `Only the ${name(lead).toLowerCase()}: out of shot a moment, it stays where they were, never the face or the whole person.`));
+    else if (mine.length) box.append(node('small', `As the Studio set-up has it: ${mine.map(name).join(', ')}, the first in shot.`));
     box.append(node('small', 'Or say its name: “give me the hands”, or just “Hands!”. The camera on air changes framing.'));
-    return { element: box, summary: lead ? name(lead) : 'the whole person', urgent: null };
+    return { element: box, summary: lead ? `only the ${name(lead).toLowerCase()}` : mine.length ? mine.map(name).join(', ') : 'the whole person', urgent: null };
   }
 
   function build(camera, director, ctx) {
@@ -115,7 +117,7 @@
   // For a page that redraws often (the Operate page): a fold, rebuilt only when what it shows changed and never while
   // one of its lists is being chosen from; open or shut as it was.
   function into(holder, camera, director, ctx) {
-    const signature = JSON.stringify([ctx.studio?.framings, ctx.studio?.cameras?.[camera.id], director.camera_focus?.[camera.id], director.camera_solo_focus?.[camera.id], director.solo_focus, director.crowd_camera, director.zoom,
+    const signature = JSON.stringify([ctx.studio?.framings, ctx.studio?.cameras?.[camera.id], ctx.studio?.only?.[camera.id], director.camera_focus?.[camera.id], director.camera_solo_focus?.[camera.id], director.solo_focus, director.crowd_camera, director.zoom,
       director.lenses?.[camera.id], director.talk?.mics?.[camera.id], director.event_mode?.mode, (director.instruments || []).length]);
     if (holder.dataset.signature === signature || (holder.contains(document.activeElement) && document.activeElement.tagName === 'SELECT')) return;
     const open = holder.querySelector('details')?.open;

@@ -835,12 +835,14 @@
     const staged = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-stage$/); if (staged) return gimbalStagePost(decodeURIComponent(staged[1]), body);
     const framed = path.match(/^\/api\/cameras\/([^/]+)\/framing$/);
     if (framed) {
-      // Creator Studio: the framing a camera leads with (creator.favour), as the manager answers.
+      // Creator Studio: the framing a camera shows alone (creator.favour), as the manager answers.
       const c = cams(), id = decodeURIComponent(framed[1]);
       if (!c.creator) return answer({ detail: 'Framings are Creator Studio’s: choose it as the kind of event' }, 409);
       if (body.framing !== null && !c.creator.framings.some(f => f.id === body.framing)) return answer({ detail: 'no such framing' }, 400);
       const mine = c.creator.cameras[id] || [];
       c.creator.cameras[id] = body.framing === null ? [] : [body.framing, ...mine.filter(f => f !== body.framing)];
+      c.creator.only = { ...(c.creator.only || {}) };
+      if (body.framing === null) delete c.creator.only[id]; else c.creator.only[id] = body.framing;
       save(); return answer(c.creator);
     }
     const homed = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-home$/); if (homed) return gimbalHomePost(decodeURIComponent(homed[1]), body);
