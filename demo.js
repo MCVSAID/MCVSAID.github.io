@@ -531,9 +531,17 @@
     if (path === '/api/scene-chat' && a[path]) { chatActive(); return a[path]; }
     if (path === '/api/recipe' && a[path]) return recipeRead();
     if (path === '/api/voice') return voiceRead();
+    if (path === '/api/programme-sound') return programmeSound();
     if (path in a) return a[path];
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
+  }
+  function programmeSound() {
+    // The chosen camera leads; in the demo every other camera is lined up with it, the third a few milliseconds moved.
+    const chosen = S.programmeSound || null, list = (cams()?.cameras || []).filter(c => c.id);
+    return { camera: chosen?.camera || null, others: chosen?.others || 'aligned', measured: chosen ? { at: Date.now() / 1000 - 40, readings: {}, moved: list[2] ? { [list[2].name]: -6 } : {} } : null,
+      cameras: list.map((c, i) => ({ id: c.id, name: c.name, in_programme: !chosen || c.id === chosen.camera || chosen.others === 'aligned',
+        why: !chosen || c.id === chosen.camera || chosen.others === 'aligned' ? null : 'programme sound comes from the chosen camera alone', trim_ms: chosen && i === 2 ? -6 : null })) };
   }
   function operatePost(main) {
     // The Operate page's Main stage and Previous shot: as the manager does, a person's choice, held.
@@ -825,6 +833,12 @@
     if (path === '/api/event-mode') return kindPost(body);
     if (path === '/api/scene-chat') return chatPost(body);
     if (path === '/api/voice') return voiceShotPost(body);
+    if (path === '/api/programme-sound') {
+      // Programme sound from one camera (programmesound.py), as the manager answers.
+      if (body.others && !['aligned', 'muted'].includes(body.others)) return answer({ detail: 'others is aligned or muted' }, 400);
+      S.programmeSound = body.camera ? { camera: body.camera, others: body.others || 'aligned' } : null;
+      save(); return answer(programmeSound());
+    }
     if (path === '/api/explain') return explainPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
     const fleet = path.match(/^\/api\/coolers\/(forget|repair)$/); if (fleet) return coolersPost(fleet[1]);

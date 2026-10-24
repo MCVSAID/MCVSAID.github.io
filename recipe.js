@@ -11,6 +11,9 @@
   if (!page) return;
   let state = null, said = '', busy = false, fetchedAt = Date.now();
   let editingStep = null, adding = null;          // the step whose edit form is open; the section a step is being added to
+  // Edit steps: the list as an editor (each step's words, Edit, Delete, up and down, dragging, adding between any two),
+  // apart from the controls for cooking it, which hid editing in each step's More (2026-10-24: "not intuitive or easy").
+  let arranging = false, dragging = null;
   const drawn = {};
   const boxes = Object.fromEntries(['load', 'now', 'run', 'ingredients', 'screen', 'voice'].map(name => [name, node('div', '')]));
   boxes.run.className = 'recipe-run-box';
@@ -25,7 +28,7 @@
   }
   const go = where => send('/api/recipe/step', { go: where });
   const step = data => send('/api/recipe/step', data);
-  const change = data => send('/api/recipe/edit', data);
+  const change = (data, done) => send('/api/recipe/edit', data, done);
   const overlay = settings => send('/api/overlay', settings);
   const voice = settings => send('/api/recipe/voice', settings);
   const button = (text, act, title, kind) => { const b = node('button', text); b.type = 'button'; b.disabled = busy; if (title) b.title = title; if (kind) b.className = kind; b.onclick = act; return b; };
@@ -140,10 +143,60 @@
     return form;
   }
 
+  const startAdding = (section, at) => { adding = { section, at }; editingStep = null; drawn.run = ''; paint(); };
+  const startEditing = id => { editingStep = id; adding = null; drawn.run = ''; paint(); };
+
+  function arrangedRow(s, list) {
+    // In Edit steps: the step's words, and every change to it in plain sight. Dragged by its handle (or anywhere on it)
+    // onto another step to go in that step's place, in either section.
+    const li = document.createElement('li'); li.className = `recipe-step arranging ${s.status.replace(' ', '-')}`; li.dataset.id = s.id;
+    const same = list.filter(x => x.section === s.section), at = same.indexOf(s);
+    li.draggable = !busy;
+    li.ondragstart = event => { dragging = s.id; li.classList.add('dragged'); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', s.id); };
+    li.ondragend = () => { dragging = null; li.classList.remove('dragged'); for (const t of boxes.run.querySelectorAll('.drop-here')) t.classList.remove('drop-here'); };
+    li.ondragover = event => { if (dragging && dragging !== s.id) { event.preventDefault(); li.classList.add('drop-here'); } };
+    li.ondragleave = () => li.classList.remove('drop-here');
+    li.ondrop = event => {
+      event.preventDefault(); li.classList.remove('drop-here');
+      const id = dragging || event.dataTransfer.getData('text/plain'); dragging = null;
+      if (id && id !== s.id) change({ action: 'move', id, section: s.section, to: at });
+    };
+    const handle = node('span', '⠿'); handle.className = 'drag-handle'; handle.title = 'Drag to move'; handle.setAttribute('aria-hidden', 'true');
+    const words = node('div', ''); words.className = 'recipe-arranged-words';
+    const text = node('p', s.text); text.title = 'Click to edit'; text.onclick = () => startEditing(s.id);
+    words.append(node('span', s.label), text);
+    if (s.caption && s.caption !== s.text) words.append(node('small', `On screen: ${s.caption}`));
+    if (s.stations.length) words.append(node('small', `Stations: ${s.stations.map(station).join(', ')}`));
+    const tools = node('div', ''); tools.className = 'recipe-arranged-tools';
+    const up = button('↑', () => change({ action: 'move', id: s.id, to: at - 1 }), `Move ${s.label} up`); up.disabled = busy || at === 0;
+    const down = button('↓', () => change({ action: 'move', id: s.id, to: at + 1 }), `Move ${s.label} down`); down.disabled = busy || at === same.length - 1;
+    const last = s.section === 'method' && same.length === 1;
+    const other = button(s.section === 'prep' ? 'To method' : 'To preparation', () => s.section === 'prep' ? change({ action: 'move', id: s.id, section: 'method', to: 0 })
+      : change({ action: 'move', id: s.id, section: 'prep', to: list.filter(x => x.section === 'prep').length }), s.section === 'prep' ? 'First in the method' : 'Last in the preparation');
+    other.disabled = busy || last;
+    const del = button('Delete', () => change({ action: 'delete', id: s.id }, `Deleted ${s.label}. Undo puts it back.`), `Delete ${s.label} (Undo puts it back)`, 'danger');
+    del.disabled = busy || last;
+    for (const b of [up, down]) b.setAttribute('aria-label', b.title);
+    tools.append(up, down, button('Edit', () => startEditing(s.id), `Edit ${s.label}'s words, caption and stations`), other, del);
+    li.append(handle, words, tools);
+    return li;
+  }
+
+  function insertHere(section, at) {
+    // Between two steps in Edit steps: add one just there.
+    const li = document.createElement('li'); li.className = 'recipe-insert';
+    const b = button('+ Add a step here', () => startAdding(section, at), null, 'link'); li.append(b);
+    li.ondragover = event => { if (dragging) { event.preventDefault(); li.classList.add('drop-here'); } };
+    li.ondragleave = () => li.classList.remove('drop-here');
+    li.ondrop = event => { event.preventDefault(); const id = dragging || event.dataTransfer.getData('text/plain'); dragging = null; if (id) change({ action: 'move', id, section, to: at }); };
+    return li;
+  }
+
   function stepRow(s, index, list, p) {
     const li = document.createElement('li'); li.className = `recipe-step ${s.status.replace(' ', '-')}`; li.dataset.id = s.id;
     if (s.status === 'current') li.setAttribute('aria-current', 'step');
     if (editingStep === s.id) { li.append(stepForm(s, s.section)); return li; }
+    if (arranging) return arrangedRow(s, list);
     const head = node('div', ''); head.className = 'recipe-step-head';
     head.append(node('span', s.label), node('strong', s.caption));
     const chip = node('span', STATUS[s.status] || s.status); chip.className = `pill ${{ current: 'air', done: 'ok', skipped: 'off', 'to come': 'off' }[s.status] || 'off'}`; head.append(chip);
@@ -171,8 +224,8 @@
     if (s.section === 'method' && list.filter(x => x.section === 'method').length === 1) other.disabled = true;
     const del = button('Delete', async () => { if (await concert.ask({ title: `Delete ${s.label}?`, text: `“${s.text}” — Undo puts it back.`, fields: [], ok: 'Delete', danger: true })) change({ action: 'delete', id: s.id }); }, null, 'danger');
     if (s.section === 'method' && list.filter(x => x.section === 'method').length === 1) del.disabled = true;
-    more.append(button('Pop up on screen', () => step({ pop: s.id }), 'Shown over the programme for a few seconds'), button('Edit', () => { editingStep = s.id; adding = null; drawn.run = ''; paint(); }),
-      up, down, other, button('Add a step after', () => { adding = { section: s.section, at: at + 1 }; editingStep = null; drawn.run = ''; paint(); }), del);
+    more.append(button('Pop up on screen', () => step({ pop: s.id }), 'Shown over the programme for a few seconds'), button('Edit', () => startEditing(s.id)),
+      up, down, other, button('Add a step after', () => startAdding(s.section, at + 1)), del);
     actions.append(more);
     li.append(actions);
     return li;
@@ -193,18 +246,25 @@
     const ol = document.createElement('ol'); ol.className = 'recipe-run';
     steps.forEach((s, index) => {
       if (adding && adding.section === name && adding.at === index) { const li = document.createElement('li'); li.className = 'recipe-step adding'; li.append(stepForm(null, name, index)); ol.append(li); }
+      else if (arranging && !adding && !editingStep) ol.append(insertHere(name, index));
       ol.append(stepRow(s, index, all, p));
     });
+    if (arranging && !adding && !editingStep && steps.length) ol.append(insertHere(name, steps.length));
     if (adding && adding.section === name && (adding.at == null || adding.at >= steps.length)) { const li = document.createElement('li'); li.className = 'recipe-step adding'; li.append(stepForm(null, name, null)); ol.append(li); }
     box.append(ol);
-    if (!adding || adding.section !== name) box.append(button(name === 'prep' ? 'Add a preparation step' : 'Add a step', () => { adding = { section: name, at: null }; editingStep = null; drawn.run = ''; paint(); }));
+    if ((!adding || adding.section !== name) && (!arranging || !steps.length)) box.append(button(name === 'prep' ? 'Add a preparation step' : 'Add a step', () => startAdding(name, null)));
     return box;
   }
 
   function runBox(p) {
     const box = node('div', '');
     const prep = p.steps.filter(s => s.section === 'prep'), method = p.steps.filter(s => s.section === 'method');
-    box.append(section('prep', prep, p), section('method', method, p));
+    const bar = node('div', ''); bar.className = 'recipe-edit-bar';
+    const toggle = button(arranging ? 'Done editing' : 'Edit steps', () => { arranging = !arranging; editingStep = null; adding = null; drawn.run = ''; paint(); }, arranging ? 'Back to cooking the steps' : 'Change, add, delete and reorder the steps', arranging ? 'primary' : '');
+    toggle.setAttribute('aria-pressed', String(arranging));
+    bar.append(toggle);
+    if (arranging) bar.append(node('small', 'Click a step’s words to change them, drag a step (or use ↑ ↓) to move it, “+ Add a step here” between any two. Undo, above, takes back the last change.'));
+    box.append(bar, section('prep', prep, p), section('method', method, p));
     return box;
   }
 
@@ -338,9 +398,9 @@
     else {
       put('now', JSON.stringify([{ ...p, seconds: null, caption: null, history: null, steps: p.steps.map(plain) }, busy]), () => nowBox(p));
       // An open form is not redrawn under the hand that is filling it in.
-      if (!editingStep && !adding && !editing(boxes.run)) {
+      if (!editingStep && !adding && !dragging && !editing(boxes.run)) {
         const opened = [...boxes.run.querySelectorAll('details.recipe-more[open]')].map(d => d.closest('li')?.dataset.id);
-        put('run', JSON.stringify([p.steps.map(plain), p.prep, state.stations, busy]), () => runBox(p));
+        put('run', JSON.stringify([p.steps.map(plain), p.prep, state.stations, busy, arranging]), () => runBox(p));
         for (const id of opened) boxes.run.querySelector(`li[data-id="${id}"] details.recipe-more`)?.setAttribute('open', '');
       } else if (drawn.run === '') put('run', 'form', () => runBox(p));
       if (!editing(boxes.ingredients)) { const was = open('ingredients'); put('ingredients', JSON.stringify([recipe.ingredients, busy]), () => ingredientsBox(recipe)); if (was) boxes.ingredients.querySelector('details')?.setAttribute('open', ''); }
