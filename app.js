@@ -1725,6 +1725,23 @@ async function refresh() {
           const forget = node('button', 'Forget this cooler'); forget.disabled = off;
           forget.onclick = async () => { if (await concert.sure(`${camera.name}: forget its cooler? The phone lets go of it and looks for coolers nearby again.`, { ok: 'Forget' })) set({ address: '' }, 'Forget cooler'); };
           chill.append(node('p', `${cooler.name || 'Cooler'} ${cooler.address}${cooler.firmware ? ` · firmware ${cooler.firmware}` : ''}`), forget);
+          // Which cooler is it? Its lights flash a few times, then go off again (app 0.9.47).
+          if ((camera.telemetry || {}).capabilities?.cooler_flash) {
+            const flash = node('button', 'Flash its lights'); flash.disabled = off || !cooler.connected;
+            flash.title = cooler.connected ? 'The cooler this phone holds blinks its lights five times, so you can see which one it is' : 'Only once it is connected';
+            flash.onclick = () => set({ flash: true }, `Flash ${camera.name}'s cooler lights`);
+            chill.append(node('span', ' '), flash);
+          }
+        }
+        if (!cooler.address && cooler.let_go) {
+          // Let go of (Forget, or Pair a different cooler): the phone never takes it back by itself, so its looks found
+          // "nothing" while it was right there (2026-10-24, Pixel8_2). Offered back here.
+          const gone = cooler.let_go;
+          const line = node('p', `Let go of: ${gone.name || 'Cooler'} ${gone.address}${gone.nearby ? ` · nearby${gone.rssi != null ? `, ${gone.rssi} dBm` : ''}` : ' · not seen in the last look'}. The phone does not take it back by itself. `);
+          const back = node('button', 'Take it back'); back.disabled = off; back.onclick = () => set({ address: gone.address }, `Take back cooler ${gone.address}`);
+          line.append(back);
+          if (!cooler.nearby.length) { const again = node('button', 'Look again'); again.disabled = off; again.onclick = () => set({ look: true }, 'Look for coolers'); line.append(node('span', ' '), again); }
+          chill.append(line);
         }
         if (cooler.nearby.length) {
           chill.append(node('p', cooler.address ? 'Other coolers nearby:' : 'Several coolers are nearby. Which one is clamped to this phone? The nearest is usually the strongest signal.'));
