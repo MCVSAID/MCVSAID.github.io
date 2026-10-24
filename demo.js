@@ -214,7 +214,7 @@
     recipeStart();
     const r = R(), v = r.voice;
     v.listening = v.enabled && cooking(); v.problem = null; v.runtime = v.installed = true;
-    return { ...r, cooking: cooking(), progress: progress(), overlay: { ...r.overlay, page: null, showing: { on: !!r.recipe, side: 'right' } }, voice: { ...v, heard: v.heard.map(e => ({ ...e, ago: Math.round(now() - e.at) })) } };
+    return { ...r, recipe: r.recipe && { ...r.recipe, equipment: r.recipe.equipment || [], text: recipeText(r.recipe) }, cooking: cooking(), progress: progress(), overlay: { ...r.overlay, page: null, showing: { on: !!r.recipe, side: 'right' } }, voice: { ...v, heard: v.heard.map(e => ({ ...e, ago: Math.round(now() - e.at) })) } };
   }
   const refused = (detail, status = 400) => answer({ detail }, status);
   function stepPost(body) {
@@ -269,34 +269,49 @@
       } else if (body.action === 'details') {
         if ('title' in body) recipe.title = String(body.title || '').trim() || recipe.title;
         if ('url' in body) recipe.url = String(body.url || '').trim();
-        if ('ingredients' in body) recipe.ingredients = (Array.isArray(body.ingredients) ? body.ingredients : String(body.ingredients).split('\n')).map(l => l.trim().replace(/^[-*•]\s*/, '')).filter(Boolean);
-      } else throw new Error('the change is "update", "add", "delete", "move" or "details"');
+        for (const key of ['ingredients', 'equipment']) if (key in body) recipe[key] = (Array.isArray(body[key]) ? body[key] : String(body[key]).split('\n')).map(l => l.trim().replace(/^[-*•]\s*/, '')).filter(Boolean);
+      } else if (body.action === 'text') {
+        // The whole recipe edited as text: a step whose words are unchanged keeps its id (and what it has had); others are new.
+        const found = readText(body.text || ''); if (!found.steps.length) throw new Error('a recipe needs at least one step');
+        const left = [...parts.prep, ...parts.method], taken = new Set(left.map(s => s.id));
+        const keep = (text, prefix) => { const n = left.findIndex(s => s.text === text); if (n >= 0) return left.splice(n, 1)[0]; const id = freshId(prefix, taken); taken.add(id); return { id, text, caption: shortCaption(text), stations: [] }; };
+        Object.assign(recipe, { title: found.title, ingredients: found.ingredients, equipment: found.equipment });
+        parts.prep.splice(0, parts.prep.length, ...found.prep.map(t => keep(t, 'p'))); parts.method.splice(0, parts.method.length, ...found.steps.map(t => keep(t, 's')));
+      } else throw new Error('the change is "update", "add", "delete", "move", "details" or "text"');
       if (!parts.method.length) throw new Error('the method needs at least one step: add another before deleting this one');
     } catch (error) { return refused(error.message); }
-    remember({ update: 'step edited', add: 'step added', delete: 'step deleted', move: 'step moved', details: 'recipe details changed' }[body.action], before);
+    remember({ update: 'step edited', add: 'step added', delete: 'step deleted', move: 'step moved', details: 'recipe details changed', text: 'recipe text edited' }[body.action], before);
     r.recipe = recipe;
     const ids = new Set(run().map(s => s.id)), c = S.cook;
     for (const table of [c.status, c.began, c.ran]) for (const id of Object.keys(table)) if (!ids.has(id)) delete table[id];
     if (c.current && !ids.has(c.current)) { c.current = null; const n = pendingFrom(0); if (n != null) begin(n, 'operator', false); }
     save(); return answer(recipeRead());
   }
-  function loadPost(body) {
-    const r = R();
-    if (body.clear) { r.recipe = null; S.cook = { current: null, since: null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} }; r.voice.heard = []; save(); return answer(recipeRead()); }
-    if (typeof body.text !== 'string' || !body.text.trim()) { note('In the demo a recipe is not read from the web: paste one instead.'); return refused('In this demo nothing is fetched from the web: paste the recipe as text instead'); }
-    // Read as recipe.from_text does, by its headings: a title, the ingredients, any preparation, the method.
-    const HEAD = { ingredients: 'ingredients', ingredient: 'ingredients', method: 'steps', directions: 'steps', instructions: 'steps', steps: 'steps', preparation: 'prep', prep: 'prep', 'before you start': 'prep', 'mise en place': 'prep', 'before you begin': 'prep' };
-    const found = { ingredients: [], prep: [], steps: [], none: [] }; let title = '', part = null;
-    for (const raw of body.text.split('\n')) {
+  function readText(text) {
+    // Read as recipe.from_text does, by its headings: a title, the ingredients, the equipment, any preparation, the method.
+    const HEAD = { ingredients: 'ingredients', ingredient: 'ingredients', equipment: 'equipment', tools: 'equipment', utensils: 'equipment', 'you will need': 'equipment', "you'll need": 'equipment',
+      method: 'steps', directions: 'steps', instructions: 'steps', steps: 'steps', preparation: 'prep', prep: 'prep', 'before you start': 'prep', 'mise en place': 'prep', 'before you begin': 'prep' };
+    const found = { ingredients: [], equipment: [], prep: [], steps: [], none: [] }; let title = '', part = null;
+    for (const raw of String(text).split('\n')) {
       const line = raw.trim(); if (!line) continue;
       const head = HEAD[line.toLowerCase().replace(/:$/, '').trim()]; if (head) { part = head; continue; }
       if (!title && !part && !/^(\d+[.)]|[-*•])\s/.test(line)) { title = line; continue; }
       found[part || 'none'].push(line.replace(/^(step\s*\d+\s*[.):-]?|\d+\s*[.):-]|[-*•])\s*/i, ''));
     }
     if (!found.steps.length) { found.steps = found.none.length ? found.none : found.prep; if (!found.none.length) found.prep = []; }
+    return { ...found, title: title || 'Recipe' };
+  }
+  const recipeText = recipe => [recipe.title, ...(recipe.ingredients?.length ? ['', 'Ingredients', ...recipe.ingredients] : []), ...(recipe.equipment?.length ? ['', 'Equipment', ...recipe.equipment] : []),
+    ...(recipe.prep?.length ? ['', 'Preparation', ...recipe.prep.map((s, n) => `${n + 1}. ${s.text}`)] : []), '', 'Method', ...recipe.steps.map((s, n) => `${n + 1}. ${s.text}`)].join('\n');
+  function loadPost(body) {
+    const r = R();
+    if (body.clear) { r.recipe = null; S.cook = { current: null, since: null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} }; r.voice.heard = []; save(); return answer(recipeRead()); }
+    if (typeof body.text !== 'string' || !body.text.trim()) { note('In the demo a recipe is not read from the web: paste one instead.'); return refused('In this demo nothing is fetched from the web: paste the recipe as text instead'); }
+    // Read as recipe.from_text does, by its headings: a title, the ingredients, any preparation, the method.
+    const found = readText(body.text);
     if (!found.steps.length) return refused('a recipe needs at least one step');
     const step = (text, id) => ({ id, text, caption: shortCaption(text), stations: [] });
-    r.recipe = { title: title || 'Recipe', url: String(body.url || '').trim(), ingredients: found.ingredients, prep: found.prep.map((t, n) => step(t, `p${n + 1}`)), steps: found.steps.map((t, n) => step(t, `s${n + 1}`)) };
+    r.recipe = { title: found.title, url: String(body.url || '').trim(), ingredients: found.ingredients, equipment: found.equipment, prep: found.prep.map((t, n) => step(t, `p${n + 1}`)), steps: found.steps.map((t, n) => step(t, `s${n + 1}`)) };
     S.cook = { current: null, since: null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} };
     save(); return answer(recipeRead());
   }

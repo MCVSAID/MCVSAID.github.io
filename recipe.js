@@ -14,11 +14,12 @@
   // Edit steps: the list as an editor (each step's words, Edit, Delete, up and down, dragging, adding between any two),
   // apart from the controls for cooking it, which hid editing in each step's More (2026-10-24: "not intuitive or easy").
   let arranging = false, dragging = null;
+  let editingText = false, textDraft = null;       // the whole recipe open as text to edit (recipe.from_edited_text), and what was typed
   const drawn = {};
   const boxes = Object.fromEntries(['load', 'now', 'run', 'ingredients', 'screen', 'voice'].map(name => [name, node('div', '')]));
   boxes.run.className = 'recipe-run-box';
   const message = node('p', ''); message.setAttribute('aria-live', 'polite');
-  page.append(boxes.load, boxes.now, boxes.run, boxes.ingredients, boxes.screen, boxes.voice, message);
+  page.append(boxes.load, boxes.now, boxes.ingredients, boxes.run, boxes.screen, boxes.voice, message);
 
   async function send(path, data, done) {
     busy = true; said = done === undefined ? 'Working…' : ''; paint();
@@ -66,7 +67,9 @@
     const head = node('div', ''); head.className = 'recipe-head';
     const title = node('h2', recipe.title); head.append(title);
     if (recipe.url) { const link = document.createElement('a'); link.href = recipe.url; link.target = '_blank'; link.rel = 'noopener'; link.textContent = recipe.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60); head.append(link); }
+    if (!editingText) head.append(button('Edit as text', () => { editingText = true; drawn.load = ''; paint(); }, 'The whole recipe as text: title, ingredients, equipment, preparation and method'));
     box.append(head);
+    if (editingText) box.append(textEditor(recipe));
     const details = document.createElement('details'); details.append(node('summary', 'Title and address, another recipe'));
     const name = document.createElement('input'); name.type = 'text'; name.value = recipe.title; name.maxLength = 120; name.size = 30; name.setAttribute('aria-label', 'Recipe title');
     const url = document.createElement('input'); url.type = 'url'; url.value = recipe.url || ''; url.size = 40; url.placeholder = 'https://… (for the QR code)'; url.setAttribute('aria-label', 'Recipe address');
@@ -75,6 +78,26 @@
     details.append(line, node('h3', 'Load another recipe'), loader(true), away);
     box.append(details);
     return box;
+  }
+
+  function textEditor(recipe) {
+    // The whole recipe as text, read again as a pasted one is when saved; steps whose words are unchanged keep what they
+    // have had (their time, their shots, done or skipped), and Undo puts the recipe back as it was.
+    const form = document.createElement('form'); form.className = 'recipe-text-editor';
+    const text = document.createElement('textarea'); text.rows = Math.min(28, Math.max(10, recipe.text.split('\n').length + 2)); text.cols = 70; text.value = textDraft ?? recipe.text; text.setAttribute('aria-label', 'The recipe as text');
+    text.oninput = () => { textDraft = text.value; };          // kept if saving is refused and the box is drawn again
+    const save = node('button', 'Save the recipe'); save.type = 'submit'; save.disabled = busy;
+    const row = node('p', ''); row.append(save, button('Cancel', () => { editingText = false; textDraft = null; drawn.load = ''; paint(); }));
+    form.append(node('small', 'Headings start each part: Ingredients, Equipment, Preparation, Method (one line each). Steps keep their numbers or not, as you like. A step whose words you leave alone keeps what it has had.'), text, row);
+    form.onsubmit = async event => {
+      event.preventDefault();
+      await change({ action: 'text', text: text.value }, 'Saved. Check the steps below.');
+      if (!/^(Saved)/.test(said)) return;
+      document.activeElement?.blur();                       // a box with the focus in it is not redrawn
+      editingText = false; textDraft = null; drawn.load = ''; paint();
+    };
+    setTimeout(() => text.focus(), 0);
+    return form;
   }
 
   // -- where the cooking is -------------------------------------------------------------------------------------------
@@ -269,10 +292,19 @@
   }
 
   function ingredientsBox(recipe) {
-    const details = document.createElement('details'); details.append(node('summary', `Ingredients (${recipe.ingredients.length})`));
-    const text = document.createElement('textarea'); text.rows = Math.min(14, Math.max(4, recipe.ingredients.length + 1)); text.value = recipe.ingredients.join('\n'); text.setAttribute('aria-label', 'Ingredients, one to a line');
-    details.append(node('small', 'One to a line. Each is shown on screen when the cook names it, with spoken cues on.'), text, button('Save ingredients', () => change({ action: 'details', ingredients: text.value })));
-    return details;
+    // What goes in, and what it is made with, side by side, each edited one to a line. Only ingredients are shown on
+    // screen when named: equipment (a coffee grinder) never is.
+    const box = node('div', ''); box.className = 'recipe-lists';
+    const list = (key, name, note, placeholder) => {
+      const part = node('div', ''); part.className = 'recipe-list';
+      const items = recipe[key] || [];
+      const text = document.createElement('textarea'); text.rows = Math.min(14, Math.max(3, items.length + 1)); text.value = items.join('\n'); text.placeholder = placeholder; text.setAttribute('aria-label', `${name}, one to a line`);
+      part.append(node('h3', `${name} (${items.length})`), text, node('small', note), button(`Save ${name.toLowerCase()}`, () => change({ action: 'details', [key]: text.value }, `${name} saved.`)));
+      return part;
+    };
+    box.append(list('ingredients', 'Ingredients', 'One to a line. Each is shown on screen when the cook names it, with spoken cues on.', '400 g tinned tomatoes'),
+      list('equipment', 'Equipment', 'What it is made with, one to a line. Listed only: never shown as an ingredient.', 'Coffee grinder'));
+    return box;
   }
 
   // OBS has stopped asking for the overlay (overlay.py, Overlay.watch): nothing laid over the programme shows.
@@ -393,7 +425,7 @@
     const recipe = state.recipe, p = state.progress;
     const open = name => boxes[name].querySelector('details')?.open;
     const plain = s => ({ ...s, seconds: null });
-    if (!editing(boxes.load)) { const was = open('load'); put('load', JSON.stringify([recipe && [recipe.title, recipe.url], busy]), () => loadBox(recipe)); if (was) boxes.load.querySelector('details')?.setAttribute('open', ''); }
+    if (!editing(boxes.load) && !(editingText && drawn.load)) { const was = open('load'); put('load', JSON.stringify([recipe && [recipe.title, recipe.url], busy, editingText]), () => loadBox(recipe)); if (was) boxes.load.querySelector('details')?.setAttribute('open', ''); }
     if (!recipe) { for (const name of ['now', 'run', 'ingredients', 'screen', 'voice']) { boxes[name].replaceChildren(); drawn[name] = ''; } }
     else {
       put('now', JSON.stringify([{ ...p, seconds: null, caption: null, history: null, steps: p.steps.map(plain) }, busy]), () => nowBox(p));
@@ -403,11 +435,11 @@
         put('run', JSON.stringify([p.steps.map(plain), p.prep, state.stations, busy, arranging]), () => runBox(p));
         for (const id of opened) boxes.run.querySelector(`li[data-id="${id}"] details.recipe-more`)?.setAttribute('open', '');
       } else if (drawn.run === '') put('run', 'form', () => runBox(p));
-      if (!editing(boxes.ingredients)) { const was = open('ingredients'); put('ingredients', JSON.stringify([recipe.ingredients, busy]), () => ingredientsBox(recipe)); if (was) boxes.ingredients.querySelector('details')?.setAttribute('open', ''); }
+      if (!editing(boxes.ingredients)) put('ingredients', JSON.stringify([recipe.ingredients, recipe.equipment, busy]), () => ingredientsBox(recipe));
       put('screen', JSON.stringify([state.overlay && { ...state.overlay, showing: state.overlay.showing?.side }, recipe.url, busy]), () => screen(state.overlay, recipe));
       if (!editing(boxes.voice)) put('voice', JSON.stringify([{ ...state.voice, heard: state.voice.heard.map(e => [e.at, e.text, e.did, e.why]), heard_at: null }, Math.floor(Date.now() / 10000), busy]), () => voiceBox(state.voice));
     }
-    message.textContent = said; message.className = said && !/^(Working…|Loaded|Saved)/.test(said) ? 'recording-warning' : '';
+    message.textContent = said; message.className = said && !/^(Working…|Loaded|Saved|Ingredients saved|Equipment saved|Deleted)/.test(said) ? 'recording-warning' : '';
   }
 
   // S: next step; R: the recipe on screen or off; Q: the QR code. On the Show and Recipe pages, not while typing.

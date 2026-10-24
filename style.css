@@ -252,6 +252,10 @@ ol.recipe-run { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
 .recipe-step.current { border-left-color:#f6c35b; background:#24384a; box-shadow:0 0 0 1px #f6c35b55; }
 .recipe-step.done { border-left-color:#6fcf97; } .recipe-step.done .recipe-step-head strong, .recipe-step.skipped .recipe-step-head strong { color:#b7c6d4; }
 .recipe-step.skipped { opacity:.7; border-left-style:dashed; } .recipe-step.adding { border-left-color:#5fb4ee; }
+/* Ingredients and equipment side by side; the recipe as text. */
+.recipe-lists { display:grid; grid-template-columns:repeat(auto-fit, minmax(16em, 1fr)); gap:10px 16px; margin:10px 0; }
+.recipe-list textarea { width:100%; box-sizing:border-box; } .recipe-list small { display:block; color:#9fb1c1; margin:2px 0 6px; }
+.recipe-text-editor textarea { width:100%; box-sizing:border-box; font-family:inherit; } .recipe-text-editor small { display:block; color:#b7c6d4; margin-bottom:6px; }
 /* Edit steps: each step's words and its changes in one row; dragged by its handle; a place to add between any two. */
 .recipe-edit-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; margin:0 0 10px; } .recipe-edit-bar small { color:#b7c6d4; flex:1 1 20em; }
 .recipe-step.arranging { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; cursor:grab; }
