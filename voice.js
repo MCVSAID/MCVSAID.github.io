@@ -107,7 +107,8 @@ window.listenTo = (v, pick, disabled) => {
   // Voice zoom calls (voicezoom.py): a tighter or wider shot asked for aloud, by the host or a performer. Built-in
   // phrases only where calls are on by default; this kind of event's own phrases everywhere, each zooming the camera on
   // air or a named one.
-  const ACTION_WORDS = { tighter: 'Tighter (1.5×)', wider: 'Wider (1.5×)', close: 'Close-up (just past the telephoto)', normal: 'Back to normal (1×)' };
+  const ACTION_WORDS = { tighter: 'Tighter (1.5×)', wider: 'Wider (1.5×)', close: 'Close-up (just past the telephoto)', normal: 'Back to normal (1×)',
+    find: 'Find me: a gimbal camera turns to whoever called (“I’m over here”)' };
   let zoomDraft = null;
   function zoomCalls(v, s) {
     const z = v.zooms, box = node('div', ''); box.className = 'voice-cameras';

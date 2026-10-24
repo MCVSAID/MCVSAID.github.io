@@ -330,3 +330,24 @@ window.concert = {
     new MutationObserver(look).observe(said, { childList: true, characterData: true, subtree: true }); look();
   },
 };
+
+// A click is a press and a release on the same element. Every page redraws from fresh state every second or two, and a
+// redraw between the press and the release replaced the button pressed with a new one, so the browser dropped the
+// click and it took a second try ("I always have to double click", 2026-10-24). When the button pressed is gone by the
+// release, the click goes to the one now in its place with the same words: what the person meant to press.
+(() => {
+  const PRESSABLE = 'button, summary, [role=button]';
+  let pressed = null;
+  document.addEventListener('pointerdown', event => {
+    const target = event.button === 0 && event.isPrimary ? event.target.closest?.(PRESSABLE) : null;
+    pressed = target ? { element: target, words: target.textContent.trim(), x: event.clientX, y: event.clientY } : null;
+  }, true);
+  document.addEventListener('pointercancel', () => { pressed = null; }, true);
+  document.addEventListener('pointerup', event => {
+    const was = pressed; pressed = null;
+    if (!was || was.element.isConnected || Math.hypot(event.clientX - was.x, event.clientY - was.y) > 12) return;
+    const now = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(PRESSABLE);
+    if (!now || now === was.element || now.disabled || now.textContent.trim() !== was.words) return;
+    setTimeout(() => now.click(), 0);           // after the browser's own click, which had no button to go to
+  }, true);
+})();

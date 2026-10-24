@@ -554,7 +554,9 @@
   function programmeSound() {
     // The chosen camera leads; in the demo every other camera is lined up with it, the third a few milliseconds moved.
     const chosen = S.programmeSound || null, list = (cams()?.cameras || []).filter(c => c.id);
-    return { camera: chosen?.camera || null, others: chosen?.others || 'aligned', measured: chosen ? { at: Date.now() / 1000 - 40, readings: {}, moved: list[2] ? { [list[2].name]: -6 } : {} } : null,
+    const auto = chosen?.others === 'auto', open = list.find(c => c.id === chosen?.camera)?.name;
+    return { lip_sync_ms: S.lipSync || 0, camera: chosen?.camera || null, others: chosen?.others || 'muted',
+      automix: auto ? { open, heard: open, clarity_db: Object.fromEntries(list.slice(0, 3).map((c, i) => [c.name, [14.5, 4.2, 1.8][i]])), changes: 3 } : null, measured: chosen ? { at: Date.now() / 1000 - 40, readings: {}, moved: list[2] ? { [list[2].name]: -6 } : {} } : null,
       cameras: list.map((c, i) => ({ id: c.id, name: c.name, in_programme: !chosen || c.id === chosen.camera || chosen.others === 'aligned',
         why: !chosen || c.id === chosen.camera || chosen.others === 'aligned' ? null : 'programme sound comes from the chosen camera alone', trim_ms: chosen && i === 2 ? -6 : null })) };
   }
@@ -849,9 +851,10 @@
     if (path === '/api/scene-chat') return chatPost(body);
     if (path === '/api/voice') return voiceShotPost(body);
     if (path === '/api/programme-sound') {
-      // Programme sound from one camera (programmesound.py), as the manager answers.
-      if (body.others && !['aligned', 'muted'].includes(body.others)) return answer({ detail: 'others is aligned or muted' }, 400);
-      S.programmeSound = body.camera ? { camera: body.camera, others: body.others || 'aligned' } : null;
+      // Programme sound from one camera (programmesound.py), as the manager answers; and lip sync on its own.
+      if ('lip_sync_ms' in body) { S.lipSync = Math.max(-400, Math.min(400, Number(body.lip_sync_ms) || 0)); save(); return answer(programmeSound()); }
+      if (body.others && !['aligned', 'muted', 'auto'].includes(body.others)) return answer({ detail: 'others is aligned, muted or auto' }, 400);
+      S.programmeSound = body.camera ? { camera: body.camera, others: body.others || 'muted' } : null;
       save(); return answer(programmeSound());
     }
     if (path === '/api/explain') return explainPost(body);
