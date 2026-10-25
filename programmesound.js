@@ -57,7 +57,7 @@
     }
     // Lip sync: every camera's sound moved against its picture, for a voice that comes after the mouth.
     const lips = node('p', ''); lips.className = 'recipe-load-row';
-    const ms = document.createElement('input'); ms.type = 'number'; ms.min = -400; ms.max = 400; ms.step = 10; ms.value = state.lip_sync_ms || 0; ms.setAttribute('aria-label', 'Lip sync, milliseconds');
+    const ms = document.createElement('input'); ms.type = 'number'; ms.min = -1500; ms.max = 1500; ms.step = 10; ms.value = state.lip_sync_ms || 0; ms.setAttribute('aria-label', 'Lip sync, milliseconds');
     const setLips = document.createElement('button'); setLips.textContent = 'Set'; setLips.disabled = busy; setLips.onclick = () => send({ lip_sync_ms: Number(ms.value) || 0 });
     lips.append(node('span', 'Lip sync: every camera’s sound '), ms, node('span', ' ms '), setLips,
       node('small', ' Negative moves the sound earlier: try −100 if voices come after the mouths, and adjust by ear on the programme. A camera measured by Calibrate sync uses its own instead.'));
