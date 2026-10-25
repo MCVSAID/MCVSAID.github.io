@@ -51,8 +51,36 @@ const rate = document.querySelector('#rate');
 api('/api/operate/settings').then(s => { rate.value = String(s.rate); }).catch(() => {});
 rate.onchange = async () => {
   const done = await act('/api/operate/settings', { rate: Number(rate.value) });
-  if (done) for (const [id, tile] of tiles) tile.querySelector('img').src = feed(id, true);
+  if (done && window.concertDemo?.feed) for (const [id, tile] of tiles) tile.querySelector('img').src = feed(id, true);
+  else if (done && socket) socket.close();                 // opened again at the new rate
 };
+
+// The live pictures, every camera shown over one WebSocket (the manager's operate_feeds). A picture stream for each
+// camera took all six connections a browser keeps to an address, and nothing else the page asked for got through: on
+// a tablet, Arm reached the camera but the page never updated, and the controller hardly moved the gimbal.
+let socket = null, socketOpen = false, sent = '';
+const pictureUrls = new Map();
+function pictures() {
+  if (window.concertDemo?.feed) return;
+  const wanted = () => JSON.stringify({ cameras: [...tiles.keys()] });
+  if (socket) { if (socketOpen && wanted() !== sent) { sent = wanted(); socket.send(sent); } return; }
+  socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/operate/feeds`);
+  socket.binaryType = 'arraybuffer';
+  socket.onopen = () => { socketOpen = true; sent = wanted(); socket.send(sent); };
+  socket.onmessage = event => {
+    if (typeof event.data === 'string') {
+      const said = JSON.parse(event.data), tile = tiles.get(said.id);
+      if (tile) { const line = tile.querySelector('.said'); line.hidden = false; line.textContent = `No live picture: ${said.error}`; }
+      return;
+    }
+    const bytes = new Uint8Array(event.data), length = bytes[0], id = new TextDecoder().decode(bytes.subarray(1, 1 + length));
+    const tile = tiles.get(id); if (!tile) return;
+    const url = URL.createObjectURL(new Blob([bytes.subarray(1 + length)], { type: 'image/jpeg' }));
+    tile.querySelector('img').src = url;
+    const before = pictureUrls.get(id); pictureUrls.set(id, url); if (before) URL.revokeObjectURL(before);
+  };
+  socket.onclose = () => { socket = null; socketOpen = false; setTimeout(pictures, 2000); };
+}
 
 async function refresh() {
   try { state = await api('/api/cameras'); } catch (error) { result.textContent = error.message; return; }
@@ -91,8 +119,10 @@ function draw() {
       tile = node('article', undefined, 'feed'); tile.dataset.id = camera.id;
       const picture = node('div', undefined, 'picture'), img = document.createElement('img'), said = node('div', 'Waiting for its picture…', 'said');
       img.alt = `${camera.name}, live`; img.onload = () => { said.hidden = true; };
-      img.onerror = () => { said.hidden = false; said.textContent = 'No live picture (is the camera streaming, and the relay on?). Trying again…'; setTimeout(() => { img.src = feed(camera.id, true); }, 3000); };
-      img.src = feed(camera.id);
+      if (window.concertDemo?.feed) {
+        img.onerror = () => { said.hidden = false; said.textContent = 'No live picture (is the camera streaming, and the relay on?). Trying again…'; setTimeout(() => { img.src = feed(camera.id, true); }, 3000); };
+        img.src = feed(camera.id);
+      }
       picture.append(img, said);
       tile.append(node('h2'), picture, onscreenPad(camera.id), node('p', '', 'line'), node('div', undefined, 'buttons'), node('div', undefined, 'shows'), node('div', undefined, 'follow'));
       tile.onclick = event => { if (event.target.closest('button')) return; const index = [...drives.keys()][0]; if (index !== undefined) { drives.set(index, camera.id); draw(); } };
@@ -150,6 +180,7 @@ function draw() {
     else { follow.replaceChildren(); delete follow.dataset.signature; }
   }
   drawPads(shown);
+  pictures();
 }
 
 // The capture controls of a tile: Arm when not armed; once armed, the stream and the recording each started or
