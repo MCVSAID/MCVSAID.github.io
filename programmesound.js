@@ -68,20 +68,23 @@
     const page = `${location.origin}${state.flash_page || '/sync-flash'}`;
     const open = node('a', page); open.href = page; open.target = '_blank'; open.rel = 'noopener';
     const measure = document.createElement('button'); measure.textContent = 'Measure'; measure.disabled = busy;
-    measure.onclick = () => send({}, '/api/sync/calibrate', 'Measuring the last 12 s of each camera…', 'Measured.');
+    measure.onclick = () => send({}, '/api/sync/calibrate', 'Recording 12 s of the programme to measure: keep the sync page flashing…', 'Measured.');
     const clear = document.createElement('button'); clear.textContent = 'Forget measurements'; clear.disabled = busy || !state.cameras.some(c => c.calibrated_ms != null);
     clear.onclick = () => send({ clear: true }, '/api/sync/calibrate', 'Forgetting…', 'Every camera is back on the one lip sync.');
-    const how = node('p', 'Calibrate sync: open '); how.append(open, node('span', ' on a phone or tablet, turn its sound up, press Start flashing, and hold it where the cameras see it for 15 s (in front of each in turn, or where all of them see it). Then press '), measure, node('span', ' '), clear);
+    const how = node('p', 'Calibrate sync: open '); how.append(open, node('span', ' on a phone or tablet, turn its sound up, press Start flashing, and hold it where the cameras see it (all of them at once if you can). While it flashes, press '), measure, node('span', ' and keep it there until it says Measured (about 15 s: OBS records the programme with the camera your sound comes from on air, then puts the shot back). '), clear);
     calibrate.append(how);
     const cal = state.calibration;
     const results = node('ul', '');
     for (const c of state.cameras) {
       const r = cal && cal.cameras ? cal.cameras[c.name] : null;
-      const text = r ? (r.set_ms != null ? `sound was ${Math.abs(r.offset_ms)} ms ${r.offset_ms >= 0 ? 'after' : 'before'} the picture: set to ${r.set_ms} ms (${r.pairs} flashes, ±${r.spread_ms} ms)` : `not measured: ${r.why}`)
+      const text = r ? (r.set_ms != null ? `sound ${Math.abs(r.offset_ms)} ms ${r.offset_ms >= 0 ? 'after' : 'before'} the picture in its own stream; lip sync set to ${r.set_ms} ms (${r.pairs} flashes, ±${r.spread_ms} ms)` : `not measured: ${r.why}`)
         : c.calibrated_ms != null ? `lip sync ${c.calibrated_ms} ms, as measured` : `lip sync ${c.lip_sync_ms} ms (every camera’s)`;
       const line = node('li', `${c.name}: ${text}`); if (r && r.set_ms == null) line.className = 'recording-warning';
       results.append(line);
     }
+    if (cal && cal.programme) results.prepend(node('li', cal.programme.offset_ms != null
+      ? `Programme (OBS's own recording, ${cal.programme.camera} on air): sound ${Math.abs(cal.programme.offset_ms)} ms ${cal.programme.offset_ms >= 0 ? 'after' : 'before'} the picture before this measurement`
+      : `Programme not measured: ${cal.programme.why}`));
     calibrate.append(results);
     parts.push(calibrate);
     const message = node('p', said); message.setAttribute('aria-live', 'polite'); if (/not |need|fail|error|no such/i.test(said)) message.className = 'recording-warning';

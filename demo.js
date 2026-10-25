@@ -864,11 +864,12 @@
       if (body.clear) { S.calibrated = null; S.calibration = null; save(); return answer(programmeSound()); }
       const list = (cams()?.cameras || []).filter(c => c.id), found = {}, set = {};
       list.forEach((c, i) => {
-        const late = [95, 140, 60][i];
+        // Each camera's stream, plus OBS's own 70 ms on the way to the programme (avsync.settings).
+        const late = [15, 60, 25][i];
         if (late == null) found[c.name] = { why: 'saw 0 flashes (hold the sync page where the camera sees it)', flashes: 0, beeps: 9 };
-        else { found[c.name] = { offset_ms: late, pairs: 9, spread_ms: 6.5, set_ms: -late }; set[c.id] = -late; }
+        else { found[c.name] = { offset_ms: late, pairs: 9, spread_ms: 6.5, set_ms: -late - 70 }; set[c.id] = -late - 70; }
       });
-      S.calibrated = set; S.calibration = { at: Date.now() / 1000, cameras: found };
+      S.calibrated = set; S.calibration = { at: Date.now() / 1000, cameras: found, programme: { offset_ms: 85, pairs: 8, spread_ms: 9, camera: list[0]?.name } };
       save(); return answer(programmeSound());
     }
     if (path === '/api/explain') return explainPost(body);
