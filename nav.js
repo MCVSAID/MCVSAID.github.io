@@ -11,6 +11,7 @@ window.concert = {
           ['/operate', 'Operate', 'Chosen cameras live, steered with an Xbox controller: aim, zoom, cut', null, 'Show', 'gamepad'],
           ['/temperatures', 'Temperatures', 'Heat now and run by run', null, 'Show', 'heat'],
           ['/director', 'Director', 'How shots are chosen, timing', null, 'Set up', 'director'],
+          ['/sound', 'Sound', 'Programme sound, lip sync and Calibrate sync, listening and voice calls', null, 'Set up', 'sound'],
           ['/colour', 'Colour', 'White balance, exposure, chart calibration and LUTs', 'admin', 'Set up', 'colour'],
           ['/people', 'People', 'People on stage recognised with their consent (performers, speakers): stars, who each camera follows (Plus AI)', 'admin', 'Set up', 'people'],
           ['/offload', 'Recordings', 'On the phones and on this PC: the files, and how they are made', null, 'Library', 'recordings'],
@@ -22,7 +23,7 @@ window.concert = {
   under: { '/recordings': '/offload', '/phones': '/system', '/locations': '/system' },
   // Pages only for one kind of event (modes.py): shown in the side bar only while it is the one in use.
   onlyIn: { '/recipe': 'cooking' },
-  inPlace: ['/', '/recipe', '/cameras', '/colour', '/director', '/recordings', '/system', '/locations'],   // parts of the one main page: switched without loading anything
+  inPlace: ['/', '/recipe', '/cameras', '/colour', '/director', '/sound', '/recordings', '/system', '/locations'],   // parts of the one main page: switched without loading anything
   // The tabs within Recordings, the same on its two pages, and System's sections: under their page in the side bar.
   recordingTabs: [['/offload', 'Local recordings (phones)'], ['/recordings', 'PC recordings']],
   systemTabs: [['/system#devices', 'Cameras & devices'], ['/system#updates', 'Updates'], ['/system#network', 'Network'], ['/system#logins', 'Logins'], ['/system#locations', 'Locations & backups'], ['/system#pc', 'This PC']],
@@ -292,6 +293,7 @@ window.concert = {
       people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.6 2.7-6 6-6s6 2.4 6 6"/><path d="M16 4.5a3 3 0 0 1 0 6M18 14.4c1.9.8 3 2.8 3 5.6"/>',
       system: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
       menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+      sound: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
       // The kinds of event: a note, a church, a microphone, a panel at a table, a stage's curtain, a pot on the heat.
       'mode-concert': '<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
       'mode-worship': '<path d="M12 2v5M9.5 4.5h5"/><path d="M5 21V11l7-4 7 4v10z"/><path d="M10 21v-4a2 2 0 0 1 4 0v4"/>',

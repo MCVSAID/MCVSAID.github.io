@@ -32,7 +32,9 @@ const PARTS = {
   '/recipe': ['#recipe'],
   '/cameras': ['#studio', '#bands', '#cameras'],
   '/colour': ['#colour'],
-  '/director': ['#ai-setup', '#director-settings', '#voice-shots', '#explain', '#face-blur', '#obs-sync'],
+  '/director': ['#ai-setup', '#director-settings', '#explain', '#face-blur', '#obs-sync'],
+  // Sound in a page of its own (2026-10-25): the programme's sound and lip sync, and listening and voice calls.
+  '/sound': ['#programme-sound', '#voice-shots'],
   '/recordings': ['#recordings-tabs', '#pc-recordings', '#relay'],
   '/system': ['#system-tabs', '#devices-setup', '#manager-update', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#decoding', '#face-blur-system'],
 };

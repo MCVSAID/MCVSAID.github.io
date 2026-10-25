@@ -1,5 +1,5 @@
 'use strict';
-// Programme sound from (programmesound.py), on the Director page: which camera's microphone the programme carries, and
+// Programme sound from (programmesound.py), on the Sound page: which camera's microphone the programme carries, and
 // whether the other cameras' join it, each only while it is lined up with the chosen one.
 (() => {
   const panel = document.querySelector('#programme-sound');
@@ -93,7 +93,7 @@
   }
 
   async function refresh() {
-    const showing = typeof part !== 'undefined' && part === '/director' && csrf && role === 'admin';
+    const showing = typeof part !== 'undefined' && part === '/sound' && csrf && role === 'admin';
     panel.hidden = !showing;
     if (!showing || busy) return;
     try { state = await api('/api/programme-sound'); paint(false); } catch (error) { said = error.message; }

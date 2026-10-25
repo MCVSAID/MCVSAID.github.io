@@ -1,5 +1,5 @@
 'use strict';
-// Voice shot calls (voicecalls.py), on the Director page: the host says a camera's shot aloud ("cut to the overhead",
+// Voice shot calls (voicecalls.py), on the Sound page: the host says a camera's shot aloud ("cut to the overhead",
 // "show the stove", "wide shot") and the director puts it on air, holding it as it does a camera chosen by hand. The
 // switches (listening, and shot calls for this kind of event), what each camera answers to with phrases of its own, how
 // sure a call must be, what was heard and what it did, and a box to try a phrase. Each camera's card says what it
@@ -71,7 +71,7 @@ window.listenTo = (v, pick, disabled) => {
     where.append(node('span', 'Listen to '), device, model);
     const status = node('p', '');
     if (!v.listening) status.append(node('span', 'Not listening: nothing to act on in this kind of event while shot calls are off.'));
-    else if (v.problem || !v.runtime || !v.installed) { status.textContent = `Not listening yet: ${v.problem || (!v.runtime ? 'speech recognition is not installed' : 'the speech model is not downloaded')}. Set it up in AI assistance above.`; status.className = 'recording-warning'; }
+    else if (v.problem || !v.runtime || !v.installed) { status.textContent = `Not listening yet: ${v.problem || (!v.runtime ? 'speech recognition is not installed' : 'the speech model is not downloaded')}. Set it up in AI assistance on the Director page.`; status.className = 'recording-warning'; }
     else status.textContent = `Listening to ${v.source}.`;
     box.append(where, node('small', 'The microphone the host speaks into hears them as they speak; the programme’s sound is what OBS sends to BlackHole, behind by as much as the programme is.'), status);
     // Heard from the programme, a voice call is acted on as late as the programme runs behind: say so, loudly.
@@ -152,7 +152,7 @@ window.listenTo = (v, pick, disabled) => {
     if (sp) {
       const line = node('p', ''); line.className = 'recipe-load-row';
       line.append(checkbox('Quick phrase spotter for your own phrases', sp.enabled, on => send({ spotter: on })));
-      line.append(node('small', !sp.enabled ? ' Off: Whisper alone hears every phrase.' : !sp.own ? ' Nothing of your own to listen for yet: add zoom phrases here, or a camera\u2019s own phrases above.' : !sp.runtime || !sp.installed ? ' Not set up: its two steps are in AI assistance above.'
+      line.append(node('small', !sp.enabled ? ' Off: Whisper alone hears every phrase.' : !sp.own ? ' Nothing of your own to listen for yet: add zoom phrases here, or a camera\u2019s own phrases above.' : !sp.runtime || !sp.installed ? ' Not set up: its two steps are in AI assistance on the Director page.'
         : sp.problem ? ` Not working: ${sp.problem}. Whisper alone meanwhile.` : sp.on ? ` Listening for ${quoted(sp.phrases)}: acted on as each ends, a fifth of a second or so.` : ' Nothing of your own to listen for yet.'));
       box.append(line);
       // Spotted on the phone itself (app 0.9.41): only a phone with its cooler connected, pausing itself when warm; the
@@ -197,7 +197,7 @@ window.listenTo = (v, pick, disabled) => {
     const intro = node('p', 'Say a camera’s shot aloud and the director puts it on air at once, then holds it as it does a camera chosen by hand' +
       ` (${Math.round(s.hold_seconds)} s, Hold after a person chooses, under Director settings), so the automatic choosing does not cut straight away: “cut to the overhead”, “show the stove”, “back to the wide”, or just “Wide shot!”. A name in passing (“the stove is hot”), a question or “don’t cut to the stove” does nothing. Speech is recognised on this computer: nothing heard is sent anywhere, and what was heard is kept here only, for the last few phrases, never saved.`);
     const parts = [node('h2', 'Voice shot calls'), intro];
-    if (!v.allowed) { const need = node('p', 'Listening is part of the Standard and Plus AI levels: choose one in AI assistance above. You can still try a phrase below.'); need.className = 'recording-warning'; parts.push(need); }
+    if (!v.allowed) { const need = node('p', 'Listening is part of the Standard and Plus AI levels: choose one in AI assistance on the Director page. You can still try a phrase below.'); need.className = 'recording-warning'; parts.push(need); }
     const sure = node('p', ''); sure.className = 'recipe-load-row';
     const pick = document.createElement('select'); pick.setAttribute('aria-label', 'How sure a call must be');
     for (const [value, text] of [[0.6, 'a little sure (60%)'], [0.7, 'fairly sure (70%), the default'], [0.8, 'quite sure (80%)'], [0.9, 'very sure (90%)']]) { const o = node('option', text); o.value = value; o.selected = Math.abs(value - s.min_confidence) < 0.01; pick.append(o); }
@@ -224,10 +224,10 @@ window.listenTo = (v, pick, disabled) => {
   };
 
   async function refresh() {
-    const showing = typeof part !== 'undefined' && (part === '/director' || part === '/cameras') && csrf;
-    panel.hidden = !(showing && part === '/director');
+    const showing = typeof part !== 'undefined' && (part === '/sound' || part === '/cameras') && csrf;
+    panel.hidden = !(showing && part === '/sound');
     if (!showing || busy) return;
-    try { state = await api('/api/voice'); fetchedAt = Date.now(); if (part === '/director') paint(false); } catch (error) { said = error.message; }
+    try { state = await api('/api/voice'); fetchedAt = Date.now(); if (part === '/sound') paint(false); } catch (error) { said = error.message; }
   }
   document.addEventListener('event-mode', refresh);
   setInterval(refresh, 3000); refresh();
