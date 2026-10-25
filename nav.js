@@ -25,7 +25,7 @@ window.concert = {
   inPlace: ['/', '/recipe', '/cameras', '/colour', '/director', '/recordings', '/system', '/locations'],   // parts of the one main page: switched without loading anything
   // The tabs within Recordings, the same on its two pages, and System's sections: under their page in the side bar.
   recordingTabs: [['/offload', 'Local recordings (phones)'], ['/recordings', 'PC recordings']],
-  systemTabs: [['/system#devices', 'Cameras & devices'], ['/system#network', 'Network'], ['/system#logins', 'Logins'], ['/system#locations', 'Locations & backups'], ['/system#pc', 'This PC']],
+  systemTabs: [['/system#devices', 'Cameras & devices'], ['/system#updates', 'Updates'], ['/system#network', 'Network'], ['/system#logins', 'Logins'], ['/system#locations', 'Locations & backups'], ['/system#pc', 'This PC']],
   subCurrent: null,          // the section open within its page, as one of the addresses above
   latest: null, fedAt: 0,    // the last /api/cameras answer, for the status line and the counts beside the pages
   session: null,

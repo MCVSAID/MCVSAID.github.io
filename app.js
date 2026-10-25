@@ -34,15 +34,17 @@ const PARTS = {
   '/colour': ['#colour'],
   '/director': ['#ai-setup', '#director-settings', '#voice-shots', '#explain', '#face-blur', '#obs-sync'],
   '/recordings': ['#recordings-tabs', '#pc-recordings', '#relay'],
-  '/system': ['#system-tabs', '#devices-setup', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#manager-update', '#decoding', '#face-blur-system'],
+  '/system': ['#system-tabs', '#devices-setup', '#manager-update', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#decoding', '#face-blur-system'],
 };
 // System's own sections, each a tab: [address after the #, name, its panels]. Done once per installation, phone or venue.
 const SYSTEM = [
-  ['devices', 'Cameras & devices', ['#devices-setup', '#release', '#battery', '#silence']],
+  ['devices', 'Cameras & devices', ['#devices-setup', '#battery', '#silence']],
+  // This PC's manager and the phones' camera app, updated in one place (2026-10-25: "more intuitive").
+  ['updates', 'Updates', ['#manager-update', '#release']],
   ['network', 'Network', ['#network']],
   ['logins', 'Logins', ['#access']],
   ['locations', 'Locations & backups', ['#locations', '#transfer']],
-  ['pc', 'This PC', ['#ai-system', '#relay-system', '#manager-update', '#decoding', '#face-blur-system']],
+  ['pc', 'This PC', ['#ai-system', '#relay-system', '#decoding', '#face-blur-system']],
 ];
 // The tab an older link (/system#release, /locations) means.
 const systemTabOf = name => SYSTEM.find(([id, , panels]) => id === name || panels.includes(`#${name}`))?.[0] || 'devices';
