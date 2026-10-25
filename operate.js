@@ -3,12 +3,19 @@
 // real life), steered with Xbox controllers through the browser's Gamepad API (no driver or plugin), or the buttons.
 // Each controller drives one camera at a time (LB/RB to change); its readings go to the manager ten times a second while
 // a stick or trigger is held (/api/operate/control), and the phone stops its gimbal by itself half a second after the last.
-let csrf = '', state = null, speed = 1;
-try { const kept = Number(localStorage.getItem('operate-speed')); if (kept >= 0 && kept <= 4) speed = kept; } catch (error) {}
+let csrf = '', state = null;
+// How quick aiming and zooming are, 1 to 10, each kept in this browser (the bar's Aim and Zoom). 2026-10-25: "incredibly
+// slow" on a tablet, at the old default of a sixth of the gimbal's speed for a full push; 6 is now 60% of it.
+const DEFAULT_AIM = 6, DEFAULT_ZOOM = 6;
+const kept = (key, fallback) => { try { const n = Number(localStorage.getItem(key)); return n >= 1 && n <= 10 ? Math.round(n) : fallback; } catch (error) { return fallback; } };
+let aimLevel = kept('operate-aim', DEFAULT_AIM), zoomLevel = kept('operate-zoom', DEFAULT_ZOOM);
+const keep = (key, value) => { try { localStorage.setItem(key, String(value)); } catch (error) { /* this visit only */ } };
 const result = document.querySelector('#result'), feeds = document.querySelector('#feeds'), choices = document.querySelector('#choices');
 const tiles = new Map(), drives = new Map(), pads = new Map();          // camera id -> tile; gamepad index -> camera id; index -> last reading
-const SPEEDS = [0.08, 0.15, 0.25, 0.4, 0.6];                            // aiming speed presets: the most the stick asks for
-const SPEED_WORDS = ['very slow', 'slow', 'normal', 'fast', 'very fast'];
+// Zoom's speed against the manager's own (operate_zoom_speed, 1.25 doublings a second at a full trigger), for each level.
+const ZOOM_TIMES = [0.4, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0, 2.5, 3.0, 4.0];
+const aimMost = () => aimLevel * 10;                                     // the most a full push asks of the gimbal (of 100)
+const zoomTimes = () => ZOOM_TIMES[zoomLevel - 1];
 const COLOURS = ['#5fb4ee', '#f4a261', '#90be6d', '#f78fb3'];
 const DEAD = 0.18, ZOOM_DEAD = 0.1, EVERY_MS = 100, SOONEST_MS = 45;   // the manager takes a reading every 40 ms at most
 // A camera's live feed; the clickable demo (demo-site) gives its drawn stills instead, having no relay.
@@ -241,7 +248,12 @@ function onscreenPad(id) {
   // Made once with the tile and never redrawn, so a press held across a refresh is let go of properly.
   const pad = node('div', undefined, 'onscreen'); pad.hidden = true;
   let timer = null, reading = null;
-  const sendReading = () => api('/api/operate/control', { camera_id: id, ...reading }).catch(error => { if (!/rate limit/i.test(error.message)) result.textContent = error.message; });
+  // The arrows go as fast as Aim says (HELD_PAN at the default), the zoom buttons as Zoom does.
+  const sendReading = () => {
+    const scale = aimLevel / DEFAULT_AIM, held = v => Math.max(-100, Math.min(100, Math.round(v * scale)));
+    api('/api/operate/control', { camera_id: id, ...reading, pan: held(reading.pan || 0), tilt: held(reading.tilt || 0), zoom_speed: zoomTimes() })
+      .catch(error => { if (!/rate limit/i.test(error.message)) result.textContent = error.message; });
+  };
   const release = () => { if (!timer) return; clearInterval(timer); timer = null; reading = { pan: 0, tilt: 0, zoom: 0 }; sendReading(); };
   const hold = (label, title, values, kind) => {
     const b = node('button', label); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title); b.dataset[kind] = '1';
@@ -296,15 +308,21 @@ function drawPads(shown) {
     for (const camera of shown) { const option = node('option', camera.name); option.value = camera.id; option.selected = drives.get(pad.index) === camera.id; pick.append(option); }
     pick.onchange = () => { drives.set(pad.index, pick.value); draw(); };
     const swatch = node('span', '■ '); swatch.style.color = COLOURS[pad.index % COLOURS.length];
-    row.append(swatch, node('span', `Controller ${pad.index + 1} drives `), pick, node('span', ` · aiming ${SPEED_WORDS[speed]} (d-pad up / down)`));
+    row.append(swatch, node('span', `Controller ${pad.index + 1} drives `), pick, node('span', ` · aim ${aimLevel} of 10 (d-pad up / down), zoom ${zoomLevel} of 10`));
     return row;
   }));
 }
-// Gentle near the middle for small corrections, the full preset only at the edge: mostly cubic.
-const curve = v => { const a = Math.abs(v); if (a < DEAD) return 0; const x = (a - DEAD) / (1 - DEAD); return Math.sign(v) * (0.15 * x + 0.85 * x * x * x); };
+// Gentle near the middle for small corrections, the most Aim allows at the edge. Less steep than it was (a third straight,
+// two thirds cubic): half a push asked for under 2% of the gimbal's speed at the old default, and moved it hardly at all.
+const curve = v => { const a = Math.abs(v); if (a < DEAD) return 0; const x = (a - DEAD) / (1 - DEAD); return Math.sign(v) * (0.35 * x + 0.65 * x * x * x); };
 // A trigger: squared, so a light squeeze creeps and a full one moves.
 const squeeze = v => { const a = Math.abs(v); if (a < ZOOM_DEAD) return 0; const x = (a - ZOOM_DEAD) / (1 - ZOOM_DEAD); return Math.sign(v) * x * x; };
-const keepSpeed = () => { try { localStorage.setItem('operate-speed', String(speed)); } catch (error) {} };
+function setAim(level) { aimLevel = Math.max(1, Math.min(10, level)); keep('operate-aim', aimLevel); aimInput.value = String(aimLevel); aimSaid.textContent = String(aimLevel); draw(); }
+function setZoom(level) { zoomLevel = Math.max(1, Math.min(10, level)); keep('operate-zoom', zoomLevel); zoomInput.value = String(zoomLevel); zoomSaid.textContent = String(zoomLevel); draw(); }
+const aimInput = document.querySelector('#aim-level'), zoomInput = document.querySelector('#zoom-level');
+const aimSaid = document.querySelector('#aim-said'), zoomSaid = document.querySelector('#zoom-said');
+aimInput.value = aimSaid.textContent = String(aimLevel); zoomInput.value = zoomSaid.textContent = String(zoomLevel);
+aimInput.oninput = () => setAim(Number(aimInput.value)); zoomInput.oninput = () => setZoom(Number(zoomInput.value));
 function step(index, delta) {
   const shown = chosen(); if (!shown.length) return;
   const at = Math.max(0, shown.findIndex(c => c.id === drives.get(index)));
@@ -331,9 +349,9 @@ function poll(time) {
     if (pressed(11)) goHome(camera);
     if (pressed(4) || pressed(14)) step(pad.index, -1);
     if (pressed(5) || pressed(15)) step(pad.index, 1);
-    if (pressed(12)) { speed = Math.min(SPEEDS.length - 1, speed + 1); keepSpeed(); draw(); }
-    if (pressed(13)) { speed = Math.max(0, speed - 1); keepSpeed(); draw(); }
-    const most = SPEEDS[speed] * 100;
+    if (pressed(12)) setAim(aimLevel + 1);
+    if (pressed(13)) setAim(aimLevel - 1);
+    const most = aimMost();
     // Aimed with the right stick (axes 2 and 3 in the standard mapping), as a camera operator's right hand does.
     const pan = Math.round(curve(pad.axes[2] || 0) * most), tilt = Math.round(-curve(pad.axes[3] || 0) * most);
     const zoomed = (pad.buttons[7]?.value || 0) - (pad.buttons[6]?.value || 0), zoom = Math.round(squeeze(zoomed) * 100) / 100;
@@ -343,7 +361,7 @@ function poll(time) {
     const moved = !last.active || Math.abs(pan - (last.pan || 0)) >= 8 || Math.abs(tilt - (last.tilt || 0)) >= 8 || Math.abs(zoom - (last.zoom || 0)) >= 0.08;
     if ((active && (time - last.sent >= EVERY_MS || (moved && time - last.sent >= SOONEST_MS))) || (!active && last.active)) {
       last.sent = time; last.pan = pan; last.tilt = tilt; last.zoom = zoom;
-      api('/api/operate/control', { camera_id: camera, pan, tilt, zoom }).catch(error => { if (!/rate limit/i.test(error.message)) result.textContent = error.message; });
+      api('/api/operate/control', { camera_id: camera, pan, tilt, zoom, zoom_speed: zoomTimes() }).catch(error => { if (!/rate limit/i.test(error.message)) result.textContent = error.message; });
     }
     pads.set(pad.index, { buttons: pad.buttons.map(b => b.pressed), sent: last.sent, active, pan: last.pan, tilt: last.tilt, zoom: last.zoom });
   }

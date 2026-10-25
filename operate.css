@@ -1,5 +1,8 @@
 #operate-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 12px; }
 #operate-bar .spacer { flex:1; }
+#operate-bar label { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+#operate-bar input[type=range] { width:110px; margin:0; }
+#operate-bar #aim-said, #operate-bar #zoom-said { min-width:1.2em; text-align:right; font-variant-numeric:tabular-nums; }
 #feeds { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap:12px; }
 .feed { background:#18232d; border-radius:10px; padding:10px; border:3px solid transparent; }
 .feed.driven { border-color:var(--driver, #5fb4ee); }
