@@ -9,7 +9,8 @@ only until you close the tab (or press *Start over*). The programme monitor show
 Choose *Cooking* as the kind of event (under the name in the side bar) to see the **Recipe** page: a recipe part-way
 through its preparation, its steps to move through and edit, and *Try a phrase*, which stands in for what the cook
 says ("let's see that recipe", "right now we're on step two", an ingredient named); the programme monitor shows what
-would go on screen.
+would go on screen. *Prep for the show* makes its long steps concise for the host to call out (by rules: the demo has
+no AI model), checks which camera covers each step and lists what the host can say for each.
 
 MCVSAID turns Android phones into managed cameras for live events, streamed to OBS on one production computer, with a
 manager that keeps them in step and can choose the shots itself. It is in a private beta: see

@@ -4,7 +4,9 @@
 // preparation and the method in a list, the one being cooked picked out, with when each began, how long it has run and
 // which of its stations have had their shots; go to any step, Next, Back and Undo; mark a step done or skipped; edit,
 // add, delete and reorder steps, their captions and stations, before the show or during it; what goes on screen; and
-// the spoken cues, with what was heard and what it did. The Show page keeps a line of it: the step now, Back and Next.
+// the spoken cues, with what was heard and what it did; and Prep for the show: the steps made concise for the host to
+// call out (recipe.concise), reviewed beside the original before they are used, the camera that covers each step and
+// what the host can say for it. The Show page keeps a line of it: the step now, Back and Next.
 // Uses app.js's api(), node(), editing(), part, csrf.
 (() => {
   const page = document.querySelector('#recipe'), summary = document.querySelector('#recipe-now');
@@ -15,11 +17,13 @@
   // apart from the controls for cooking it, which hid editing in each step's More (2026-10-24: "not intuitive or easy").
   let arranging = false, dragging = null;
   let editingText = false, textDraft = null;       // the whole recipe open as text to edit (recipe.from_edited_text), and what was typed
+  // Prep for the show: the concise steps proposed (/api/recipe/prep's answer) and the copy of them being reviewed.
+  let proposed = null, draft = null, prepVersion = 0, useModel = true;
   const drawn = {};
-  const boxes = Object.fromEntries(['load', 'now', 'run', 'ingredients', 'screen', 'voice'].map(name => [name, node('div', '')]));
-  boxes.run.className = 'recipe-run-box';
+  const boxes = Object.fromEntries(['load', 'now', 'run', 'ingredients', 'prep', 'screen', 'voice'].map(name => [name, node('div', '')]));
+  boxes.run.className = 'recipe-run-box'; boxes.prep.className = 'recipe-prep';
   const message = node('p', ''); message.setAttribute('aria-live', 'polite');
-  page.append(boxes.load, boxes.now, boxes.ingredients, boxes.run, boxes.screen, boxes.voice, message);
+  page.append(boxes.load, boxes.now, boxes.ingredients, boxes.prep, boxes.run, boxes.screen, boxes.voice, message);
 
   async function send(path, data, done) {
     busy = true; said = done === undefined ? 'Working…' : ''; paint();
@@ -148,14 +152,20 @@
     const picks = stationPicks(s ? s.stations : [], label);
     const stations = node('span', ''); stations.className = 'recipe-picks'; stations.append(node('span', 'Stations to show '), ...picks);
     const cap = node('label', 'On screen '); cap.append(caption);
+    // Prep for the show's fields: the few words the host calls out, and the fuller details behind them.
+    const short = document.createElement('input'); short.type = 'text'; short.value = s?.short || ''; short.maxLength = 60; short.size = 28; short.placeholder = 'Grind the beans'; short.setAttribute('aria-label', `What the host calls out for ${label}`);
+    const callOut = node('label', 'Called out as '); callOut.append(short);
+    const details = document.createElement('textarea'); details.rows = 2; details.value = s?.details || ''; details.maxLength = 600; details.placeholder = 'The fuller details, if any (optional)'; details.setAttribute('aria-label', `Details of ${label}`);
     const save = node('button', s ? 'Save step' : 'Add step'); save.type = 'submit'; save.disabled = busy;
     const cancel = button('Cancel', () => { editingStep = null; adding = null; drawn.run = ''; paint(); });
     const row = node('p', ''); row.append(save, cancel);
-    form.append(text, cap, stations, row);
+    form.append(text, cap, callOut, details, stations, row);
     form.onsubmit = async event => {
       event.preventDefault();
       const chosen = [...new Set(picks.map(p => p.value).filter(Boolean))];
       const words = { text: text.value.trim(), stations: chosen, ...(caption.value.trim() ? { caption: caption.value.trim() } : {}) };
+      if (short.value.trim() !== (s?.short || '')) words.short = short.value.trim();
+      if (details.value.trim() !== (s?.details || '')) words.details = details.value.trim();
       // Unchanged stations are left to follow the words when the words change and nothing else was chosen.
       if (s && words.text !== s.text && JSON.stringify(chosen) === JSON.stringify(s.stations)) delete words.stations;
       if (s && words.text !== s.text && words.caption === s.caption) delete words.caption;
@@ -188,6 +198,7 @@
     const words = node('div', ''); words.className = 'recipe-arranged-words';
     const text = node('p', s.text); text.title = 'Click to edit'; text.onclick = () => startEditing(s.id);
     words.append(node('span', s.label), text);
+    if (s.short) words.append(node('small', `Called out as: ${s.short}`));
     if (s.caption && s.caption !== s.text) words.append(node('small', `On screen: ${s.caption}`));
     if (s.stations.length) words.append(node('small', `Stations: ${s.stations.map(station).join(', ')}`));
     const tools = node('div', ''); tools.className = 'recipe-arranged-tools';
@@ -225,6 +236,7 @@
     const chip = node('span', STATUS[s.status] || s.status); chip.className = `pill ${{ current: 'air', done: 'ok', skipped: 'off', 'to come': 'off' }[s.status] || 'off'}`; head.append(chip);
     li.append(head);
     li.append(node('p', s.text));
+    if (s.short) { const call = node('small', `Called out as “${s.short}”`); call.className = 'recipe-short'; li.append(call); }
     const facts = node('p', ''); facts.className = 'recipe-step-facts';
     if (s.began != null) { facts.append(node('span', `Began ${timeOfDay(s.began)} · `)); facts.append(running(s.seconds || 0, s.status === 'current')); }
     else facts.append(node('span', 'Not begun'));
@@ -247,8 +259,14 @@
     if (s.section === 'method' && list.filter(x => x.section === 'method').length === 1) other.disabled = true;
     const del = button('Delete', async () => { if (await concert.ask({ title: `Delete ${s.label}?`, text: `“${s.text}” — Undo puts it back.`, fields: [], ok: 'Delete', danger: true })) change({ action: 'delete', id: s.id }); }, null, 'danger');
     if (s.section === 'method' && list.filter(x => x.section === 'method').length === 1) del.disabled = true;
+    // Its details in the pop-up (overlay.py, details): as set for every step under On screen, or always or never for this one.
+    const own = document.createElement('select'); own.disabled = busy; own.setAttribute('aria-label', `Details of ${s.label} when it pops up`);
+    for (const [value, text] of [['', `As set for every step (${state.overlay?.step_details ? 'shown' : 'not shown'})`], ['true', 'Shown'], ['false', 'Not shown']]) own.append(Object.assign(document.createElement('option'), { value, textContent: text }));
+    own.value = s.details_on_screen == null ? '' : String(s.details_on_screen);
+    own.onchange = () => change({ action: 'update', id: s.id, details_on_screen: own.value === '' ? null : own.value === 'true' }, 'Saved.');
+    const details = node('label', 'Details when it pops up: '); details.className = 'recipe-details-choice'; details.append(own);
     more.append(button('Pop up on screen', () => step({ pop: s.id }), 'Shown over the programme for a few seconds'), button('Edit', () => startEditing(s.id)),
-      up, down, other, button('Add a step after', () => startAdding(s.section, at + 1)), del);
+      up, down, other, button('Add a step after', () => startAdding(s.section, at + 1)), del, details);
     actions.append(more);
     li.append(actions);
     return li;
@@ -307,6 +325,135 @@
     return box;
   }
 
+  // -- prep for the show -------------------------------------------------------------------------------------------------
+  // A long recipe, or a step a paragraph long, does not fit the card on screen or the host's memory. Made concise
+  // (recipe.concise, by the director's model where one is set up, else by rules), each step is one action in a few words,
+  // with the words it came from kept as its details. Shown beside the original to change before it is used; Undo, above,
+  // takes it back.
+  const wordCount = text => (String(text).match(/[A-Za-zÀ-ÿ'’-]+/g) || []).length;
+
+  async function makeConcise() {
+    busy = true; said = 'Making concise steps…'; for (const name in drawn) drawn[name] = ''; paint();
+    try {
+      proposed = await api('/api/recipe/prep', { method: 'POST', body: JSON.stringify({ use_model: useModel }) });
+      draft = { prep: proposed.proposal.prep.map(s => ({ ...s })), steps: proposed.proposal.steps.map(s => ({ ...s })) };
+      prepVersion += 1; said = '';
+    } catch (error) { said = error.message; }
+    busy = false; for (const name in drawn) drawn[name] = ''; paint();
+  }
+
+  async function useDraft(recipe) {
+    const steps = list => list.map(s => { const out = { ...s }; if (s.short !== s.proposedShort) delete out.caption; delete out.proposedShort; return out; });
+    const done = await send('/api/recipe', { recipe: { title: recipe.title, url: recipe.url, ingredients: recipe.ingredients, equipment: recipe.equipment, prep: steps(draft.prep), steps: steps(draft.steps) }, prepared: true },
+      'Using the concise steps. Undo puts the original back.');
+    if (/^Using/.test(said)) { proposed = null; draft = null; drawn.prep = ''; paint(); }
+    return done;
+  }
+
+  function groups(original, proposal) {
+    // Each step of the original with the concise steps made from it: the first keeps its id, those split from it follow it.
+    const out = original.map(s => ({ step: s, made: [] }));
+    let at = -1;
+    for (const s of proposal) {
+      const n = out.findIndex(g => g.step.id === s.id);
+      if (n >= 0) at = n;
+      if (at >= 0) out[at].made.push(s);
+    }
+    return out;
+  }
+
+  function conciseEditor(s, list) {
+    // One concise step under review: what the host calls out, its details, and whether those may be popped up on screen.
+    const box = node('div', ''); box.className = 'recipe-concise-step';
+    if (s.proposedShort === undefined) s.proposedShort = s.short;
+    const short = document.createElement('input'); short.type = 'text'; short.value = s.short || ''; short.maxLength = 60; short.size = 30; short.setAttribute('aria-label', 'What the host calls out');
+    const count = node('small', '');
+    const counted = () => { const n = wordCount(short.value); count.textContent = n > 8 ? ` ${n} words: shorter is easier to call out` : ` ${n} word${n === 1 ? '' : 's'}`; count.className = n > 8 ? 'recording-warning' : ''; };
+    short.oninput = () => { s.short = short.value.trim(); counted(); }; counted();
+    const details = document.createElement('textarea'); details.rows = 2; details.value = s.details || ''; details.maxLength = 600; details.placeholder = 'Details (optional)'; details.setAttribute('aria-label', 'Its details');
+    details.oninput = () => { s.details = details.value.trim(); };
+    const onScreen = checkbox('Details may pop up on screen', s.details_on_screen !== false, on => { s.details_on_screen = on; });
+    const drop = button('Remove', () => { list.splice(list.indexOf(s), 1); prepVersion += 1; drawn.prep = ''; paint(); }, 'Leave this concise step out', 'link');
+    drop.disabled = busy || list.length === 1;
+    const row = node('div', ''); row.className = 'recipe-concise-row'; row.append(count, onScreen, drop);
+    box.append(short, row, details);
+    return box;
+  }
+
+  function roomList(room) {
+    // Check the room: the camera that covers each step (what each camera was given to show), steps with none flagged.
+    const box = node('div', ''); box.className = 'recipe-room'; box.append(node('h4', 'Check the room'));
+    const missing = room.filter(r => !r.covered);
+    box.append(node('small', missing.length ? `${missing.length} of ${room.length} steps have no camera of their own: give a camera that role on the Cameras page, or the director shows whatever it rates best.` : `Every step has a camera of its own.`));
+    const ol = document.createElement('ol');
+    for (const r of room) {
+      const li = document.createElement('li'); if (!r.covered) li.className = 'recording-warning';
+      li.append(node('strong', `${r.label} · ${r.short || ''}`), node('span', ' — '),
+        node('span', r.cameras.length ? `${r.cameras.join(', ')} (${r.stations.map(station).join(', ')})` : r.stations.length ? `no camera shows ${r.stations.map(station).join(' or ')}` : 'no station of its own: whatever the model rates best (give it one in Edit steps)'));
+      ol.append(li);
+    }
+    box.append(ol);
+    return box;
+  }
+
+  function rehearse(calls, loaded) {
+    // Rehearse: what the host can say for each step, its number and its own concise words as the quick spotter hears them.
+    const box = node('div', ''); box.className = 'recipe-rehearse'; box.append(node('h4', 'Rehearse'));
+    box.append(node('small', loaded ? 'Say a step’s number or its words to go to it. Try one to see what it does: it acts on the show as if the host said it (Undo, above, takes it back).' : 'What the host will be able to say once these steps are used.'));
+    const ol = document.createElement('ol');
+    for (const c of calls) {
+      const li = document.createElement('li'); li.append(node('strong', `${c.label} · ${c.short || ''}`), node('br', ''));
+      for (const phrase of [c.number, ...c.words]) {
+        const chip = loaded ? button(`“${phrase}”`, () => tryPhrase(phrase), 'Try it, as if the host said it', 'link') : node('q', phrase);
+        li.append(chip, node('span', ' '));
+      }
+      if (c.unheard) li.append(node('small', `Its own words: ${c.unheard}.`));
+      ol.append(li);
+    }
+    box.append(ol);
+    return box;
+  }
+
+  async function tryPhrase(phrase) {
+    await send('/api/recipe/voice', { say: phrase }, '');
+    const heard = state?.said;
+    if (heard) { said = `Tried “${phrase}”: ${heard.did ? heard.did : `nothing (${heard.why})`}`; paint(); }
+  }
+
+  function prepBox(recipe) {
+    const box = node('div', ''); box.append(node('h3', 'Prep for the show'));
+    const check = state.prep?.check;
+    if (!proposed) {
+      box.append(node('p', 'Long steps are hard to call out and do not fit the card on screen. Make concise steps: one action each, a few words the host can say (“Grind the beans”), with each step’s original words kept as its details. You see them beside the original first.'));
+      const row = node('p', ''); row.className = 'recipe-load-row';
+      row.append(button('Make concise steps', makeConcise, 'Proposed, not used until you say so'));
+      if (state.prep?.model) row.append(checkbox(`Use the AI model (${state.prep.model})`, useModel, on => { useModel = on; }));
+      else row.append(node('small', ' Made by rules: with the director’s AI model set up (Director page) it is asked instead.'));
+      box.append(row);
+      if (check) { const both = node('div', ''); both.className = 'recipe-prep-checks'; both.append(roomList(check.room), rehearse(check.calls, true)); box.append(both); }
+      return box;
+    }
+    const how = proposed.how === 'model' ? `Made by the AI model (${proposed.model}).` : proposed.why ? `Made by rules: the AI model’s answer would not do (${proposed.why}).` : 'Made by rules.';
+    box.append(node('p', `${how} Change any of them, then use them or keep the original. Edit steps, below, changes them later too.`));
+    const table = document.createElement('table'); table.className = 'recipe-review';
+    const head = document.createElement('tr'); head.append(node('th', 'The original'), node('th', 'Concise steps')); table.append(head);
+    for (const [key, word] of [['prep', 'Prep'], ['steps', 'Step']]) {
+      groups(recipe[key] || [], draft[key]).forEach((g, n) => {
+        const tr = document.createElement('tr');
+        const was = node('td', ''); was.append(node('strong', `${word} ${n + 1}`), node('p', g.step.text));
+        const now = node('td', ''); for (const s of g.made) now.append(conciseEditor(s, draft[key]));
+        if (!g.made.length) now.append(node('small', 'Left out.'));
+        tr.append(was, now); table.append(tr);
+      });
+    }
+    const wrap = node('div', ''); wrap.className = 'recipe-review-wrap'; wrap.append(table);
+    const row = node('p', ''); row.className = 'recipe-controls';
+    row.append(button('Use these steps', () => useDraft(recipe), 'Undo puts the original back', 'primary'), button('Keep the original', () => { proposed = null; draft = null; said = 'Kept the original steps.'; drawn.prep = ''; paint(); }));
+    box.append(wrap, row);
+    if (proposed.check) { const both = node('div', ''); both.className = 'recipe-prep-checks'; both.append(roomList(proposed.check.room), rehearse(proposed.check.calls, false)); box.append(both); }
+    return box;
+  }
+
   // OBS has stopped asking for the overlay (overlay.py, Overlay.watch): nothing laid over the programme shows.
   function notShown(o) {
     const warn = node('p', `OBS is not showing the overlay: its browser source has not asked for it for ${Math.round(o.quiet / 60) ? `${Math.round(o.quiet / 60)} min` : `${o.quiet} s`}, so the recipe, QR code and captions do not reach the programme. ${o.reloads ? 'The manager has asked OBS to load it again. ' : ''}If it stays like this, in OBS open the source “MCVSAID · Overlay” and press Refresh cache of current page, or restart OBS.`);
@@ -314,13 +461,45 @@
   }
 
   // -- on screen --------------------------------------------------------------------------------------------------------
+  // When the recipe card is up (overlay.py, when): always, at moments, or only when asked.
+  const WHEN = [['always', 'Always'], ['moments', 'At moments'], ['asked', 'Only when asked']];
+  const MOMENTS = [['record', 'After Record starts'], ['step', 'As each step begins'], ['end', 'After the last step is done']];
+  function whenShown(o) {
+    const box = document.createElement('fieldset'); box.className = 'recipe-when'; box.disabled = busy;
+    box.append(node('legend', 'When the recipe shows'));
+    const choices = node('p', '');
+    for (const [value, text] of WHEN) {
+      const label = node('label', ''), pick = document.createElement('input'); pick.type = 'radio'; pick.name = 'recipe-when'; pick.value = value; pick.checked = o.when === value;
+      pick.onchange = () => overlay({ when: value }); label.append(pick, node('span', ` ${text} `)); choices.append(label);
+    }
+    box.append(choices);
+    if (o.when === 'moments') {
+      const at = node('p', ''); at.className = 'recipe-moments';
+      for (const [name, text] of MOMENTS) at.append(checkbox(text, o.moments?.[name], on => overlay({ moments: { [name]: on } })));
+      const seconds = document.createElement('input'); seconds.type = 'number'; seconds.min = 5; seconds.max = 120; seconds.step = 1; seconds.value = o.moment_seconds; seconds.setAttribute('aria-label', 'Seconds the recipe stays up');
+      seconds.onchange = () => { const n = Number(seconds.value); if (n >= 5 && n <= 120) overlay({ moment_seconds: n }); };
+      const long = node('label', 'for '); long.append(seconds, node('span', ' seconds each'));
+      at.append(long); box.append(at);
+    }
+    box.append(node('small', { always: 'Up the whole show. “Hide the recipe” (or Hide) puts it away until it is shown again.',
+      moments: 'Up for a while at each moment ticked, as the programme reaches it. “Show the recipe” puts it up at any time, and “hide the recipe” cuts a showing short.',
+      asked: 'Up only when the cook says “show the recipe”, or Show is pressed, and away again on “hide the recipe”.' }[o.when] || ''));
+    return box;
+  }
+
   function screen(o, recipe) {
     const box = node('div', ''); box.append(node('h3', 'On screen'));
     const row = node('p', '');
     const toggle = (name, on, onText, offText, key) => { const b = button(on ? offText : onText, () => overlay({ [name]: !on }), `Shortcut: ${key}`); if (on) b.className = 'active'; return b; };
-    row.append(toggle('recipe', o.recipe, 'Show recipe', 'Hide recipe', 'R'));
+    // The recipe card up or away now, whatever is chosen for when it shows: as the cook's "show the recipe" and "hide the recipe".
+    const up = !!o.up;
+    const card = button(up ? 'Hide recipe' : 'Show recipe', () => overlay({ card: up ? 'hide' : 'show' }), up ? 'Puts the recipe away now. Shortcut: R' : `Puts the recipe up now${o.when === 'always' ? '' : ` for ${o.card_seconds} s`}. Shortcut: R`);
+    if (up) card.className = 'active';
+    row.append(card);
     const qr = toggle('qr', o.qr, 'Show QR code', 'Hide QR code', 'Q'); qr.disabled = busy || !recipe.url; if (!recipe.url) qr.title = 'Give the recipe’s address (Title and address, above) to show its QR code'; row.append(qr);
     row.id = 'overlay-buttons'; box.append(row);
+    box.append(whenShown(o));
+    box.append(checkbox('Show each step’s details when it pops up (each step can say otherwise, under its More)', o.step_details, on => overlay({ step_details: on })));
     box.append(checkbox('Call out each step on screen as it begins, and “continued” when the programme comes back to it', o.captions, on => overlay({ captions: on })));
     const shown = o.showing || {};
     box.append(node('p', `The recipe goes on the side away from the cook: ${shown.on ? `the ${shown.side} now` : 'right, until the cook has been found'}. A step popped up goes there too; the QR code goes in the lower corner on the cook’s side, with an ingredient named just above it, and a recipe too long for its panel says how many steps are out of sight.`));
@@ -344,7 +523,7 @@
     if (!v.allowed) { const need = node('p', 'Spoken cues are part of the Standard and Plus AI levels: choose one in '); need.append(toDirector(), node('span', '. You can still try a phrase below.')); need.className = 'recording-warning'; box.append(need); }
     box.append(checkbox('Act on what the cook says', v.enabled, on => voice({ enabled: on }), !v.allowed));
     const cues = node('div', ''); cues.className = 'recipe-cues';
-    cues.append(checkbox('“Let’s see that recipe”: the recipe on screen, with its QR code when it has an address', v.cues.recipe, on => voice({ cues: { recipe: on } })),
+    cues.append(checkbox('“Let’s see that recipe”: the recipe on screen, with its QR code when it has an address; “hide the recipe”: put away', v.cues.recipe, on => voice({ cues: { recipe: on } })),
       checkbox('“Right now we’re on step two”, “next step”, “back a step”, “back to the sauce”, “the final step”: that step begun, forward or back, and popped up on screen', v.cues.step, on => voice({ cues: { step: on } })),
       checkbox('An ingredient on the list named: its line at the foot of the screen for a few seconds; called out (“now to our butter”), shown again even if it just was', v.cues.ingredient, on => voice({ cues: { ingredient: on } })));
     box.append(cues);
@@ -426,20 +605,21 @@
     const open = name => boxes[name].querySelector('details')?.open;
     const plain = s => ({ ...s, seconds: null });
     if (!editing(boxes.load) && !(editingText && drawn.load)) { const was = open('load'); put('load', JSON.stringify([recipe && [recipe.title, recipe.url], busy, editingText]), () => loadBox(recipe)); if (was) boxes.load.querySelector('details')?.setAttribute('open', ''); }
-    if (!recipe) { for (const name of ['now', 'run', 'ingredients', 'screen', 'voice']) { boxes[name].replaceChildren(); drawn[name] = ''; } }
+    if (!recipe) { proposed = draft = null; for (const name of ['now', 'run', 'ingredients', 'prep', 'screen', 'voice']) { boxes[name].replaceChildren(); drawn[name] = ''; } }
     else {
       put('now', JSON.stringify([{ ...p, seconds: null, caption: null, history: null, steps: p.steps.map(plain) }, busy]), () => nowBox(p));
       // An open form is not redrawn under the hand that is filling it in.
       if (!editingStep && !adding && !dragging && !editing(boxes.run)) {
         const opened = [...boxes.run.querySelectorAll('details.recipe-more[open]')].map(d => d.closest('li')?.dataset.id);
-        put('run', JSON.stringify([p.steps.map(plain), p.prep, state.stations, busy, arranging]), () => runBox(p));
+        put('run', JSON.stringify([p.steps.map(plain), p.prep, state.stations, state.overlay?.step_details, busy, arranging]), () => runBox(p));
         for (const id of opened) boxes.run.querySelector(`li[data-id="${id}"] details.recipe-more`)?.setAttribute('open', '');
       } else if (drawn.run === '') put('run', 'form', () => runBox(p));
       if (!editing(boxes.ingredients)) put('ingredients', JSON.stringify([recipe.ingredients, recipe.equipment, busy]), () => ingredientsBox(recipe));
+      if (!editing(boxes.prep)) put('prep', JSON.stringify([proposed ? prepVersion : null, proposed ? recipe.steps.length + (recipe.prep || []).length : state.prep, busy]), () => prepBox(recipe));
       put('screen', JSON.stringify([state.overlay && { ...state.overlay, showing: state.overlay.showing?.side }, recipe.url, busy]), () => screen(state.overlay, recipe));
       if (!editing(boxes.voice)) put('voice', JSON.stringify([{ ...state.voice, heard: state.voice.heard.map(e => [e.at, e.text, e.did, e.why]), heard_at: null }, Math.floor(Date.now() / 10000), busy]), () => voiceBox(state.voice));
     }
-    message.textContent = said; message.className = said && !/^(Working…|Loaded|Saved|Ingredients saved|Equipment saved|Deleted)/.test(said) ? 'recording-warning' : '';
+    message.textContent = said; message.className = said && !/^(Working…|Loaded|Saved|Ingredients saved|Equipment saved|Deleted|Using the concise|Kept the original|Making concise|Tried)/.test(said) ? 'recording-warning' : '';
   }
 
   // S: next step; R: the recipe on screen or off; Q: the QR code. On the Show and Recipe pages, not while typing.
@@ -447,7 +627,7 @@
     if (!state?.recipe || !state.cooking || !['/', '/recipe'].includes(part) || event.metaKey || event.ctrlKey || event.altKey || event.repeat || event.target.closest?.('input, textarea, select, [contenteditable], dialog')) return;
     const which = event.key.toLowerCase();
     if (which === 's' && document.querySelector('#recipe-next:not([disabled]), #recipe-next-show:not([disabled])')) { event.preventDefault(); event.stopImmediatePropagation(); go('next'); }
-    else if (which === 'r') { event.preventDefault(); overlay({ recipe: !state.overlay.recipe }); }
+    else if (which === 'r') { event.preventDefault(); overlay({ card: state.overlay.up ? 'hide' : 'show' }); }
     else if (which === 'q' && state.recipe.url) { event.preventDefault(); overlay({ qr: !state.overlay.qr }); }
   }, true);
 

@@ -1,5 +1,6 @@
 // The overlay page in OBS (overlay.py): asks the manager twice a second what to show, and shows it: the recipe, its QR
 // code, the step captions, and for a few seconds a step popped up or an ingredient's line as a lower third.
+// When the recipe is up, and each step's wording on it, is the manager's to say (overlay.py): this page shows what it is sent.
 const key = new URLSearchParams(location.search).get('key') || '';
 const $ = id => document.getElementById(id);
 // drawn: the recipe the card was last filled with, which is not always the one last shown (a pop-up keeps the card away).
@@ -113,11 +114,11 @@ function show(state) {
     fade(card, true, sideChanged || refill || card.hidden ? () => { place(); if (refill) { fill(state); drawn = recipeKey; } mark(state); fit(card); } : null);
     if (!refill && shown.current !== where) { mark(state); fit(card); }
   } else fade(card, false);
-  // A step popped up: "Step 2 of 5", its caption, its words.
+  // A step popped up: "Step 2 of 5", its caption, and its details when they are on (overlay.py, details).
   const popped = state.popup ? `${state.popup.at}|${state.popup.label}` : null;
   if (popped !== shown.popup) {
     if (state.popup) fade(popup, true, () => { place(); $('popup-label').textContent = `${state.popup.label} of ${state.popup.of}${state.popup.section === 'prep' ? ' · Preparation' : ''}`;
-      $('popup-caption').textContent = state.popup.caption; $('popup-text').textContent = state.popup.text; });
+      $('popup-caption').textContent = state.popup.caption; $('popup-text').textContent = state.popup.text || ''; $('popup-text').hidden = !state.popup.text; });
     else fade(popup, false);
   } else if (state.popup && sideChanged) fade(popup, true, place);
   // An ingredient's line, as a lower third on the cook's side.

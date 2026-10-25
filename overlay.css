@@ -58,7 +58,7 @@ body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: #ff
 .side-right #popup { right: 3vw; } .side-left #popup { left: 3vw; }
 #popup-label { margin: 0 0 0.3vw; font-size: 1.05vw; letter-spacing: 0.12em; text-transform: uppercase; color: #f6c35b; font-weight: 700; }
 #popup-caption { margin: 0 0 0.5vw; font-size: 2.1vw; line-height: 1.15; font-weight: 700; }
-#popup-text { margin: 0; font-size: 1.15vw; line-height: 1.35; color: #d7dde5; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; }
+#popup-text { margin: 0; font-size: 1.15vw; line-height: 1.35; color: #d7dde5; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; }
 /* An ingredient named: a lower third at the foot of the programme on the cook's side, beside a step's caption. */
 #lower { position: absolute; bottom: 7vh; max-width: 30vw; padding: 0.8vw 1.6vw 0.8vw 1.2vw; background: rgba(14, 18, 24, 0.86);
   border-left: 0.45vw solid #7fc8a9; border-radius: 0.6vw; font-size: 1.7vw; font-weight: 600; line-height: 1.2;

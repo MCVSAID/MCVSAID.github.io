@@ -83,7 +83,7 @@
       results.append(line);
     }
     if (cal && cal.programme) results.prepend(node('li', cal.programme.offset_ms != null
-      ? `Programme (OBS's own recording, ${cal.programme.camera} on air): sound ${Math.abs(cal.programme.offset_ms)} ms ${cal.programme.offset_ms >= 0 ? 'after' : 'before'} the picture before this measurement`
+      ? `Programme (OBS's own recording, ${cal.programme.camera} on air): sound ${Math.abs(cal.programme.offset_ms)} ms ${cal.programme.offset_ms >= 0 ? 'after' : 'before'} the picture before this measurement${cal.programme.why ? `. ${cal.programme.why}.` : ''}`
       : `Programme not measured: ${cal.programme.why}`));
     calibrate.append(results);
     parts.push(calibrate);

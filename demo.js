@@ -201,7 +201,7 @@
     const r = R(), c = S.cook, steps = run(); if (!r?.recipe) return null;
     const t = now(), index = c.current == null ? -1 : at(c.current), next = upcoming();
     const shown = id => { const ran = (c.ran[id] || 0) + (id === c.current ? t - c.since : 0); return ran; };
-    const listed = steps.map((s, n) => ({ id: s.id, label: s.label, section: s.section, number: s.number, caption: s.caption, text: s.text, stations: s.stations,
+    const listed = steps.map((s, n) => ({ id: s.id, label: s.label, section: s.section, number: s.number, caption: s.caption, text: s.text, stations: s.stations, short: s.short || null, details: s.details || null, details_on_screen: s.details_on_screen ?? null,
       status: s.id === c.current && !c.status[s.id] ? 'current' : c.status[s.id] || 'to come', began: c.began[s.id] ?? null, seconds: c.began[s.id] != null ? Math.round(shown(s.id)) : null,
       shots: c.began[s.id] != null && (c.status[s.id] === 'done' || shown(s.id) >= 15) ? s.stations : [], next: n === next }));
     const step = index >= 0 ? steps[index] : null;
@@ -214,7 +214,7 @@
     recipeStart();
     const r = R(), v = r.voice;
     v.listening = v.enabled && cooking(); v.problem = null; v.runtime = v.installed = true;
-    return { ...r, recipe: r.recipe && { ...r.recipe, equipment: r.recipe.equipment || [], text: recipeText(r.recipe) }, cooking: cooking(), progress: progress(), overlay: { ...r.overlay, page: null, showing: { on: !!r.recipe, side: 'right' } }, voice: { ...v, heard: v.heard.map(e => ({ ...e, ago: Math.round(now() - e.at) })) } };
+    return { ...r, recipe: r.recipe && { ...r.recipe, equipment: r.recipe.equipment || [], text: recipeText(r.recipe) }, cooking: cooking(), progress: progress(), prep: { model: null, check: prepCheck(r.recipe) }, overlay: { ...r.overlay, ...whenShown(r.overlay), up: !!r.recipe && cooking() && cardUp(), hidden: S.cook?.hidden != null, page: null, showing: { on: !!r.recipe, side: 'right' } }, voice: { ...v, heard: v.heard.map(e => ({ ...e, ago: Math.round(now() - e.at) })) } };
   }
   const refused = (detail, status = 400) => answer({ detail }, status);
   function stepPost(body) {
@@ -253,6 +253,7 @@
       if ('text' in given) { const text = String(given.text || '').trim().slice(0, 400); if (!text) throw new Error('a step needs some words'); if (text !== s.text) { s.text = text; if (!('caption' in given)) s.caption = shortCaption(text); if (!('stations' in given)) s.stations = s.stations || []; } }
       if ('caption' in given) s.caption = String(given.caption || '').trim().slice(0, 80) || shortCaption(s.text);
       if (Array.isArray(given.stations)) s.stations = given.stations.filter(k => r.stations.some(([key]) => key === k)).slice(0, 2);
+      if ('details_on_screen' in given) { if (![true, false, null].includes(given.details_on_screen)) throw new Error('details_on_screen is true, false or null (as set for every step)'); if (given.details_on_screen === null) delete s.details_on_screen; else s.details_on_screen = given.details_on_screen; }
       return s;
     };
     try {
@@ -303,9 +304,138 @@
   }
   const recipeText = recipe => [recipe.title, ...(recipe.ingredients?.length ? ['', 'Ingredients', ...recipe.ingredients] : []), ...(recipe.equipment?.length ? ['', 'Equipment', ...recipe.equipment] : []),
     ...(recipe.prep?.length ? ['', 'Preparation', ...recipe.prep.map((s, n) => `${n + 1}. ${s.text}`)] : []), '', 'Method', ...recipe.steps.map((s, n) => `${n + 1}. ${s.text}`)].join('\n');
+  // Prep for the show (recipe.concise): the steps made concise for the host to call out. There is no AI model in the
+  // demo, so it is always the manager's rules: each step split at its sentences, its short wording from its first
+  // clause, the words it came from kept as its details. Check the room and Rehearse are worked out as the manager does.
+  const PREP_VERBS = new Set(["add", "arrange", "assemble", "bake", "barbecue", "barbeque", "baste", "beat", "blanch", "blend", "boil", "braise", "brew", "bring", "broil", "brown", "brush", "butter",
+    "caramelise", "caramelize", "carve", "char", "check", "chill", "chop", "coat", "combine", "continue", "cook", "cool", "core", "cover", "crack", "cream", "crush", "cut", "debone", "deglaze", "dice",
+    "divide", "drain", "drizzle", "dust", "emulsify", "fill", "fillet", "finish", "flip", "fold", "freeze", "fry", "garnish", "grate", "grease", "grill", "grind", "halve", "heat", "julienne", "knead",
+    "layer", "leave", "let", "line", "make", "marinate", "measure", "melt", "mince", "mix", "oil", "pat", "peel", "place", "plate", "poach", "portion", "pour", "preheat", "prepare", "press", "process",
+    "pulse", "puree", "purée", "put", "quarter", "reduce", "refrigerate", "remove", "render", "repeat", "rest", "return", "rinse", "roast", "roll", "saute", "sauté", "scatter", "score", "scramble", "sear",
+    "season", "serve", "set", "shape", "shred", "sift", "simmer", "slice", "smoke", "soak", "spread", "sprinkle", "squeeze", "start", "steam", "stew", "stir", "stir-fry", "strain", "stuff", "sweat",
+    "taste", "tip", "toast", "top", "toss", "transfer", "trim", "turn", "use", "wash", "weigh", "whip", "whisk", "wipe", "wrap", "zest"]);
+  const NOT_DOING = new Set(["a", "about", "an", "as", "be", "by", "if", "it", "it's", "its", "makes", "note", "note:", "once", "or", "serves", "should", "that", "the", "there", "these", "they", "this",
+    "those", "tip:", "we", "when", "which", "yield", "yields", "you", "your"]);
+  const LEADS = new Set(["in", "on", "at", "into", "with", "using", "for", "after", "before", "meanwhile", "while", "over", "under", "to", "from", "gently", "carefully",
+    "slowly", "quickly", "now", "then", "next", "finally", "first", "again", "still", "also", "just", "lightly", "immediately", "once", "when", "if"]);
+  const CAUTION = /^(?:take care|be careful|careful|make sure|be sure|don't|do not|try not|avoid|watch)\b/i;
+  const DANGLING = new Set(["a", "an", "and", "at", "by", "for", "from", "in", "into", "its", "of", "on", "or", "over", "some", "the", "then", "to", "until", "with", "your"]);
+  // As speech.own_words: no phrase ending mid-way ("…and fry for"), and no "the" put before "in" ("stir in…").
+  const TRAILING = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'into', 'on', 'at', 'for', 'with', 'from', 'over', 'your', 'our', 'then', 'until', 'by']);
+  const NO_THE = new Set(['the', 'a', 'an', 'your', 'our', 'in', 'into', 'on', 'over', 'up', 'out', 'down', 'off', 'with', 'to', 'for', 'and', 'it', 'them', 'all', 'each',
+    'every', 'some', 'one', 'two', 'three', 'four', 'five', 'six', 'half', 'until', 'well', 'gently', 'everything', 'together', 'through', 'back', 'away']);
+  const squash = text => String(text || '').split(/\s+/).filter(Boolean).join(' ');
+  function firstAction(text) {
+    for (const clause of squash(text).split(/(?<=[.;:!?])\s+|,\s+/)) {
+      const tokens = clause.split(' ');
+      for (let n = 0; n < tokens.length; n++) {
+        const bare = tokens[n].toLowerCase().replace(/[^a-zà-ÿ-]/g, '');
+        if (PREP_VERBS.has(bare)) return [bare, clauseRest(tokens.slice(n + 1))];
+      }
+    }
+    return null;
+  }
+  function clauseRest(tokens) {
+    const rest = tokens.join(' ').split(/\s+(?:for|until|about|over|in|on|with|into|to|at|while|and|then)\s+\d|\s+(?:until|while|then)\b|[(]/)[0];
+    return rest.split(/\s+(?:until|for about|for)\s+/)[0].replace(/^[\s.;:,]+|[\s.;:,]+$/g, '');
+  }
+  function gerund(verb) {
+    if (verb.endsWith('ie')) return `${verb.slice(0, -2)}ying`;
+    if (verb.endsWith('e') && !/(ee|ye|oe)$/.test(verb) && verb.length > 2) return `${verb.slice(0, -1)}ing`;
+    if ((verb.match(/[aeiou]+/g) || []).length === 1 && /[^aeiou][aeiou][^aeiouwxy]$/.test(verb)) return `${verb}${verb.slice(-1)}ing`;
+    return `${verb}ing`;
+  }
+  const capital = text => text.slice(0, 1).toUpperCase() + text.slice(1);
+  function shortFor(text) {
+    let found = firstAction(text);
+    const tokens = squash(text).split(/(?<=[.;:!?])\s+|,\s+/)[0].split(' '), first = (tokens[0] || '').toLowerCase().replace(/[^a-zà-ÿ-]/g, '');
+    if (first && !PREP_VERBS.has(first) && !LEADS.has(first) && !NOT_DOING.has(first) && (!found || found[0] !== first)) found = [first, clauseRest(tokens.slice(1))];
+    const said = (found ? `${found[0]} ${found[1]}` : squash(text)).split(' ').slice(0, 8);
+    while (said.length > 1 && DANGLING.has(said[said.length - 1].toLowerCase().replace(/[,;:.]+$/, ''))) said.pop();
+    return capital(said.join(' ').replace(/^[\s,;:.]+|[\s,;:.]+$/g, '').slice(0, 60));
+  }
+  function conciseCaption(short) { const found = firstAction(short); return found ? capital(`${gerund(found[0])}${found[1] ? ` ${found[1]}` : ''}`) : shortCaption(short); }
+  const doing = part => { const first = (part.split(' ')[0] || '').toLowerCase(); return !CAUTION.test(part) && (!!firstAction(part) || (/^[a-z]/.test(first) && !NOT_DOING.has(first))); };
+  function piecesOf(text) {
+    const found = []; let waiting = '';
+    for (let part of squash(text).split(/(?<=[.!?;])\s+(?=[^\s\d])|,?\s+and then\s+|[,;]\s+then\s+/)) {
+      part = part.trim().replace(/^(?:then|now|next|finally|afterwards|after that|and)\b,?\s*/i, '').trim().replace(/[\s;,]+$/, '');
+      if (!part) continue;
+      part = capital(part) + (/[.!?)]$/.test(part) ? '' : '.');
+      if (!doing(part)) { if (found.length) found[found.length - 1] += ` ${part}`; else waiting = `${waiting} ${part}`.trim(); continue; }
+      found.push(`${waiting} ${part}`.trim()); waiting = '';
+    }
+    return found.length ? found : [squash(text)];
+  }
+  const sameWords = (a, b) => normal(a) === normal(b);
+  function conciseRecipe(recipe) {
+    const taken = new Set([...(recipe.prep || []), ...recipe.steps].map(s => s.id)), out = { ...copy(recipe) };
+    for (const [key, prefix] of [['prep', 'p'], ['steps', 's']]) {
+      out[key] = [];
+      for (const s of recipe[key] || []) {
+        const split = piecesOf(s.text);
+        if (split.length === 1 && s.short) { out[key].push(copy(s)); continue; }
+        split.forEach((words, n) => {
+          const short = shortFor(words), whole = split.length === 1;
+          const short_ = whole ? shortFor(s.text) : short;
+          const made = { id: n ? freshId(prefix, taken) : s.id, text: whole ? s.text : words, short: short_, caption: conciseCaption(short_), stations: s.stations || [] };
+          taken.add(made.id);
+          if (!sameWords(short_, made.text)) made.details = made.text;
+          if (typeof s.details_on_screen === 'boolean') made.details_on_screen = s.details_on_screen;
+          out[key].push(made);
+        });
+      }
+    }
+    return out;
+  }
+  function prepCheck(recipe) {
+    // Check the room: the cameras each station has, as the manager recorded them; Rehearse: each step's number and words.
+    if (!recipe) return null;
+    const recorded = R().prep?.check?.room || [], cameras = {};
+    for (const r of recorded) if (r.cameras.length) for (const k of r.stations) cameras[k] = [...new Set([...(cameras[k] || []), ...r.cameras])];
+    // The demonstration's cameras are set up for a band; in Cooking they stand in for a kitchen's, as below. The counter
+    // has none, so the room check has a step to flag.
+    if (!Object.keys(cameras).length) Object.assign(cameras, { cook_host: ['Centre Wide'], board: ['Stage Left'], stovetop: ['Stage Right'], oven: ['Drums'], mixer: ['Keys'] });
+    const steps = [];
+    for (const [section, key, word] of [['prep', 'prep', 'Prep'], ['method', 'steps', 'Step']]) (recipe[key] || []).forEach((s, n) => steps.push({ ...s, section, number: n + 1, label: `${word} ${n + 1}` }));
+    const spokenNumber = n => Object.keys(NUM).find(k => NUM[k] === n && !/(st|nd|rd|th)$/.test(k)) || String(n);
+    const ownWords = s => [...new Set([s.short, s.text].flatMap(given => {
+      // As spotter.phrase_key writes it: plain words, numbers as words.
+      const words = String(given || '').split(/[,.;:()!?]|\band then\b/)[0].toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-zà-ÿ0-9'\s-]/g, ' ').replace(/-/g, ' ')
+        .split(/\s+/).filter(Boolean).map(w => (/^\d+$/.test(w) ? spokenNumber(Number(w)) : w)).slice(0, 8);
+      while (words.length > 3 && TRAILING.has(words[words.length - 1])) words.pop();
+      if (words.length < 3) return [];
+      return NO_THE.has(words[1]) || words.length >= 8 ? [words.join(' ')] : [words.join(' '), [words[0], 'the', ...words.slice(1)].join(' ')];
+    }))];
+    return {
+      room: steps.map(s => { const found = [...new Set((s.stations || []).flatMap(k => cameras[k] || []))]; return { id: s.id, label: s.label, short: s.short || s.caption, stations: s.stations || [], cameras: found, covered: found.length > 0 }; }),
+      calls: steps.map(s => { const words = ownWords(s); return { id: s.id, label: s.label, short: s.short || s.caption || s.text, number: `${s.section === 'prep' ? 'prep step' : 'step'} ${spokenNumber(s.number)}`, words, unheard: words.length ? null : 'fewer than 3 words: Whisper hears it' }; }),
+    };
+  }
+  function prepPost(body) {
+    const r = R(); if (!r.recipe) return refused('No recipe is loaded', 409);
+    if (body.use_model) note('In the demo there is no AI model: the steps are made concise by the manager’s rules.');
+    const proposal = conciseRecipe(r.recipe);
+    return answer({ proposal, how: 'rules', why: null, model: null, check: prepCheck(proposal) });
+  }
   function loadPost(body) {
     const r = R();
     if (body.clear) { r.recipe = null; S.cook = { current: null, since: null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} }; r.voice.heard = []; save(); return answer(recipeRead()); }
+    if (body.recipe && r.recipe && Array.isArray(body.recipe.steps) && body.recipe.steps.length) {
+      // Prep for the show's concise steps used: an edit of the recipe loaded, which Undo takes back.
+      const before = copy(r.recipe), taken = new Set();
+      const fix = (list, prefix) => (list || []).filter(s => String(s.text || '').trim()).map(s => {
+        const id = s.id && !taken.has(s.id) ? s.id : freshId(prefix, taken); taken.add(id);
+        const short = String(s.short || '').trim().slice(0, 60);
+        return { ...s, id, text: String(s.text).trim().slice(0, 400), short: short || undefined, details: String(s.details || '').trim().slice(0, 600) || undefined, caption: s.caption || (short ? conciseCaption(short) : shortCaption(s.text)), stations: s.stations || [] };
+      });
+      remember(body.prepared ? 'concise steps used' : 'recipe saved', before);
+      r.recipe = { ...r.recipe, prep: fix(body.recipe.prep, 'p'), steps: fix(body.recipe.steps, 's') };
+      const ids = new Set(run().map(s => s.id)), c = S.cook;
+      for (const table of [c.status, c.began, c.ran]) for (const id of Object.keys(table)) if (!ids.has(id)) delete table[id];
+      if (c.current && !ids.has(c.current)) { c.current = null; const n = pendingFrom(0); if (n != null) begin(n, 'operator', false); }
+      save(); return answer(recipeRead());
+    }
     if (typeof body.text !== 'string' || !body.text.trim()) { note('In the demo a recipe is not read from the web: paste one instead.'); return refused('In this demo nothing is fetched from the web: paste the recipe as text instead'); }
     // Read as recipe.from_text does, by its headings: a title, the ingredients, any preparation, the method.
     const found = readText(body.text);
@@ -315,9 +445,41 @@
     S.cook = { current: null, since: null, status: {}, began: {}, ran: {}, undos: [], history: [], flash: {} };
     save(); return answer(recipeRead());
   }
+  // When the recipe card is up (overlay.py: when, moments, card_up): always unless put away, at moments, or only when asked.
+  const WHEN = ['always', 'moments', 'asked'], MOMENTS = ['record', 'step', 'end'];
+  function whenShown(o) {
+    const given = o.moments || {};
+    return { when: WHEN.includes(o.when) ? o.when : o.recipe ? 'always' : 'asked', moments: Object.fromEntries(MOMENTS.map(k => [k, given[k] !== false])),
+      moment_seconds: o.moment_seconds || 20, step_details: !!o.step_details, card_seconds: o.card_seconds || 30 };
+  }
+  function cardUp() {
+    const r = R(), c = S.cook, t = now(), f = c.flash || {}, o = whenShown(r.overlay);
+    if (f.recipe && f.recipe.until > t) return true;
+    const steps = run(), done = steps.length > 0 && steps.every(s => c.status[s.id]);
+    if (!done) c.finished = null; else if (c.finished == null) c.finished = t;
+    if (o.when === 'always') return c.hidden == null;
+    if (o.when !== 'moments') return false;
+    const recording = S.answers['/api/cameras']?.director?.recording;
+    const began = [o.moments.record && recording ? recording.started : null, o.moments.step && c.current ? c.since : null, o.moments.end ? c.finished : null];
+    return began.some(b => b != null && b <= t && t < b + o.moment_seconds && (c.hidden == null || b > c.hidden));
+  }
+  const showCard = () => { S.cook.flash.recipe = { until: now() + whenShown(R().overlay).card_seconds }; S.cook.hidden = null; };
+  const hideCard = () => { delete S.cook.flash.recipe; S.cook.hidden = now(); };
   function overlayPost(body) {
+    recipeStart();
     const r = R(), o = r.overlay;
-    for (const k of ['recipe', 'qr', 'captions', 'obs']) if (typeof body[k] === 'boolean') o[k] = body[k];
+    if (body.when !== undefined && !WHEN.includes(body.when)) return refused('when must be "always", "moments" or "asked"');
+    if (body.moments !== undefined && (typeof body.moments !== 'object' || Object.entries(body.moments).some(([k, v]) => !MOMENTS.includes(k) || typeof v !== 'boolean'))) return refused('moments are record, step and end, each true or false');
+    if (body.moment_seconds !== undefined && !(typeof body.moment_seconds === 'number' && body.moment_seconds >= 5 && body.moment_seconds <= 120)) return refused('moment_seconds must be 5 to 120');
+    if (body.card !== undefined && !['show', 'hide'].includes(body.card)) return refused('card must be "show" or "hide"');
+    const before = whenShown(o).when;
+    for (const k of ['recipe', 'qr', 'captions', 'obs', 'step_details']) if (typeof body[k] === 'boolean') o[k] = body[k];
+    if (typeof body.recipe === 'boolean') o.when = body.recipe ? 'always' : 'asked';
+    if (body.when) { o.when = body.when; o.recipe = body.when === 'always'; }
+    if (body.moments) o.moments = { ...whenShown(o).moments, ...body.moments };
+    if (body.moment_seconds) o.moment_seconds = body.moment_seconds;
+    if (whenShown(o).when !== before) S.cook.hidden = null;
+    if (body.card === 'show') showCard(); else if (body.card === 'hide') hideCard();
     if (typeof body.prep === 'boolean') o.prep = body.prep;
     if (body.follow && r.progress) r.progress.follow = body.follow;
     if (body.obs) { o.scenes = 7; o.problem = null; note('In the demo there is no OBS: the overlay is shown on the programme monitor.'); }
@@ -349,6 +511,8 @@
   const CALLED = /\b(?:now to|on to|onto|back to|time for|next up|here's|here is|here are|here comes|in goes|in go|let's add|lets add|add our|grab our|our)\b/;
   const MOVING = /\b(?:moving|move|let's move|lets move|we'll move|carry|carrying|going|let's go)\s+on\s+to\s+(?:the\s+|our\s+)?(.+)$/;
   const RECIPE = /\b(?:see|show|look at|have a look at|take a look at|pull up|put up|bring up|check out|pop up)\s+(?:you\s+|us\s+|me\s+|everyone\s+|you guys\s+)?(?:the|that|this|our|my|a)\s+(?:full\s+|whole\s+)?recipe\b(?!\s+(?:calls|says|uses|needs|asks|wants|has|is|was|said|will|book|card)\b)|\bhere's\s+(?:the|that|our|my)\s+(?:full\s+)?recipe\b|\brecipe\s+(?:on|up on)\s+(?:the\s+)?screen\b/;
+  const OUR = '(?:the|that|this|our|my)\\s+(?:full\\s+|whole\\s+)?recipe';
+  const HIDE = new RegExp(`\\b(?:hide|close|put away|take away|take down|take off|get rid of|clear away|lose)\\s+${OUR}\\b(?!\\s+book\\b)|\\b(?:put|take|get)\\s+${OUR}(?:\\s+card)?\\s+(?:away|down|off)\\b|\\brecipe\\s+off\\s+(?:the\\s+)?screen\\b`);
   const STOP = new Set('the a an to on onto and then our my some of in into with for it its this that now we let\'s go next bit part so okay ok right is are'.split(' '));
   function cues(text) {
     const steps = run(), found = [], elsewhere = ELSEWHERE.test(text);
@@ -373,13 +537,29 @@
           // Equally good matches go to the nearest: "back to the garlic" is the last garlic step, not the first.
           let best = 0, chosen = null;
           steps.map((s, n) => [s, n]).filter(([, n]) => keep(n) && wanted.length).sort((a, b) => Math.abs(a[1] - here) - Math.abs(b[1] - here)).forEach(([s]) => {
-            const have = new Set(normal(`${s.caption} ${s.text}`).split(' ').map(singular)); const share = wanted.filter(w => have.has(w)).length / wanted.length;
+            const have = new Set(normal(`${s.caption} ${s.text} ${s.short || ''}`).split(' ').map(singular)); const share = wanted.filter(w => have.has(w)).length / wanted.length;
             if (share > best) { best = share; chosen = s; } });
           if (chosen && best >= 0.5) { found.push({ kind: 'step', score: 0.6 + 0.4 * best, id: chosen.id, label: chosen.label }); break; }
         }
+        // A step said in its own words or its concise wording (speech.said_step): most of its words (all, for a concise
+        // wording of two), the next step first, then the nearest ahead, then behind. Not when denied.
+        if (!found.length && !/\b(?:don't|do not|won't|will not|not yet|never)\b/.test(text)) {
+          const heard = new Set(text.split(' ').map(singular)), own = said => [...new Set(normal(said || '').split(' ').filter(w => w && !STOP.has(w)).map(singular))];
+          let best = 0, chosen = null;
+          steps.map((s, n) => [s, n]).sort((a, b) => ((a[1] <= here) - (b[1] <= here)) || Math.abs(a[1] - here) - Math.abs(b[1] - here)).forEach(([s]) => {
+            for (const [kind, words] of [['text', own(s.text)], ['short', own(s.short)]]) {
+              if (words.length < (kind === 'short' ? 2 : 3)) continue;
+              const share = words.filter(w => heard.has(w)).length / words.length;
+              if (share >= (words.length < 3 ? 1 : 0.75) && share > best) { best = share; chosen = s; }
+            }
+          });
+          if (chosen) found.push({ kind: 'step', score: 0.8, id: chosen.id, label: chosen.label });
+        }
       }
     }
-    const r = text.match(RECIPE); if (r && !negated(text, r.index)) found.push({ kind: 'recipe', score: 1 });
+    const hide = text.match(HIDE), r = text.match(RECIPE);
+    if (hide && !negated(text, hide.index)) found.push({ kind: 'hide', score: 1 });
+    else if (r && !negated(text, r.index)) found.push({ kind: 'recipe', score: 1 });
     const words = text.split(' ').map(singular), heard = new Set(words), lines = R().recipe?.ingredients || [], seen = [];
     lines.forEach((line, index) => {
       let best = null, where = 0;
@@ -412,16 +592,17 @@
     if (entry.did) { v.heard.unshift(entry); v.heard = v.heard.slice(0, 10); save(); return answer({ ...recipeRead(), said: entry }); }
     if (shot) reasons.push(shot);
     S.lastCue = S.lastCue || {};
-    const rest = { recipe: 20, step: 4, next: 8, back: 8, ingredient: 5 };
+    const rest = { recipe: 20, hide: 5, step: 4, next: 8, back: 8, ingredient: 5 };
     for (const cue of cues(normal(body.say))) {
-      const kind = ['next', 'back'].includes(cue.kind) ? 'step' : cue.kind;
+      const kind = ['next', 'back'].includes(cue.kind) ? 'step' : cue.kind === 'hide' ? 'recipe' : cue.kind;
       if (!v.cues[kind]) { reasons.push(`${kind} cues are off`); continue; }
       if (cue.score < v.min_confidence) { reasons.push(`not sure enough (${cue.score.toFixed(2)} of ${v.min_confidence.toFixed(2)} needed)`); continue; }
       const key = cue.kind === 'ingredient' ? `ingredient:${cue.index}` : cue.kind;
       // An ingredient called out ("now to our butter") is shown again even if it just was; named in passing, it rests.
       const resting = cue.kind === 'ingredient' ? (cue.called ? t - (S.lastCue.ingredient || -1e9) < 2 : t - (S.lastCue[key] || -1e9) < 45) : t - (S.lastCue[key] || -1e9) < rest[cue.kind];
       if (resting) { reasons.push('said again too soon'); continue; }
-      if (cue.kind === 'recipe') { S.cook.flash.recipe = { until: t + 30 }; entry.did = `showed the recipe${r.recipe.url ? ' and its QR code' : ''} for 30 s`; }
+      if (cue.kind === 'recipe') { showCard(); delete S.lastCue.hide; entry.did = `showed the recipe${r.recipe.url ? ' and its QR code' : ''} for 30 s`; }
+      else if (cue.kind === 'hide') { hideCard(); delete S.lastCue.recipe; entry.did = 'put the recipe away'; }
       else if (['step', 'next', 'back'].includes(cue.kind)) {
         if (cue.kind === 'step' && !cue.id) { reasons.push(`heard ${cue.label}, but the recipe has no ${cue.label}`); continue; }
         if (cue.kind === 'step' && cue.id === S.cook.current) { reasons.push(`already on ${cue.label}`); continue; }
@@ -526,7 +707,7 @@
     const c = S.cook, r = R(); if (!c || !r?.recipe || !cooking()) return [];
     const t = now(), shown = [], f = c.flash || {};
     if (f.popup && f.popup.until > t) shown.push(['popup', `${f.popup.label} of ${f.popup.of}`, f.popup.caption]);
-    else if (r.overlay.recipe || (f.recipe && f.recipe.until > t)) shown.push(['card', r.recipe.title, c.current ? run()[at(c.current)]?.label || '' : '']);
+    else if (cardUp()) shown.push(['card', r.recipe.title, c.current ? run()[at(c.current)]?.label || '' : '']);
     if (f.lower && f.lower.until > t) shown.push(['lower', f.lower.text, '']);
     return shown;
   }
@@ -899,7 +1080,7 @@
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);
     if (S.answers['/api/recipe']) {
-      const recipeAnswer = { '/api/recipe': loadPost, '/api/recipe/step': stepPost, '/api/recipe/edit': editPost, '/api/recipe/voice': voicePost, '/api/overlay': overlayPost }[path];
+      const recipeAnswer = { '/api/recipe': loadPost, '/api/recipe/step': stepPost, '/api/recipe/edit': editPost, '/api/recipe/voice': voicePost, '/api/overlay': overlayPost, '/api/recipe/prep': prepPost }[path];
       if (recipeAnswer) return recipeAnswer(body);
     }
     return merge(path, body);

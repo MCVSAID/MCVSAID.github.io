@@ -256,6 +256,18 @@ ol.recipe-run { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
 .recipe-lists { display:grid; grid-template-columns:repeat(auto-fit, minmax(16em, 1fr)); gap:10px 16px; margin:10px 0; }
 .recipe-list textarea { width:100%; box-sizing:border-box; } .recipe-list small { display:block; color:#9fb1c1; margin:2px 0 6px; }
 .recipe-text-editor textarea { width:100%; box-sizing:border-box; font-family:inherit; } .recipe-text-editor small { display:block; color:#b7c6d4; margin-bottom:6px; }
+/* Prep for the show: the concise steps beside the original, the room checked and the calls rehearsed. */
+.recipe-prep { background:#18242f; border-radius:10px; padding:4px 14px 10px; margin:10px 0; }
+.recipe-review-wrap { overflow-x:auto; } table.recipe-review { width:100%; border-collapse:collapse; }
+table.recipe-review th { text-align:left; color:#b7c6d4; font-weight:600; padding:4px 8px; }
+table.recipe-review td { vertical-align:top; padding:8px; border-top:1px solid #2c3e4f; width:50%; } table.recipe-review td p { margin:4px 0 0; }
+.recipe-concise-step { background:#1e2c39; border-radius:8px; padding:6px 10px; margin:0 0 6px; }
+.recipe-concise-step input[type=text], .recipe-concise-step textarea { width:100%; box-sizing:border-box; font-family:inherit; } .recipe-concise-step input[type=text] { font-weight:600; }
+.recipe-concise-row { display:flex; flex-wrap:wrap; align-items:center; gap:2px 14px; margin:2px 0 4px; } .recipe-concise-row small { color:#9fb1c1; }
+.recipe-prep-checks { display:grid; grid-template-columns:repeat(auto-fit, minmax(18em, 1fr)); gap:10px 16px; }
+.recipe-prep-checks ol { padding-left:1.4em; margin:6px 0; } .recipe-prep-checks li { margin:0 0 6px; } .recipe-prep-checks small { display:block; color:#b7c6d4; }
+.recipe-rehearse button.link { padding:0 2px; } .recipe-step .recipe-short { display:block; color:#f6c35b; margin:2px 0 4px; }
+@media (max-width:600px) { table.recipe-review, table.recipe-review tbody, table.recipe-review tr, table.recipe-review td { display:block; width:auto; } table.recipe-review th { display:none; } }
 /* Edit steps: each step's words and its changes in one row; dragged by its handle; a place to add between any two. */
 .recipe-edit-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; margin:0 0 10px; } .recipe-edit-bar small { color:#b7c6d4; flex:1 1 20em; }
 .recipe-step.arranging { display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; cursor:grab; }
