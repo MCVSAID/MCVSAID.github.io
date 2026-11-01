@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js?v=eae7d69f2c9c"></script><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Teleprompter</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/teleprompter.css">
+<body class="prompter">
+<!-- The teleprompter (prompter.py): on a tablet at https://teleprompter.mcvsaid.local behind its PIN, or full screen from
+     the dashboard's Teleprompter page. The script's words, the one being said lit as it is said. On a karaoke night
+     (karaoke.py) it is the screen facing the singer, at https://karaoke.mcvsaid.local too: who is singing, who is next,
+     and between songs the QR code guests sign up by. -->
+<form id="pin-login" hidden>
+  <h1>Teleprompter</h1>
+  <p>Enter the PIN from the manager’s Teleprompter page.</p>
+  <input id="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="8" aria-label="PIN" readonly>
+  <div id="keypad"></div>
+  <p id="pin-said" aria-live="polite"></p>
+</form>
+<main id="prompter" hidden>
+  <div id="top">
+    <select id="script" aria-label="Script"></select>
+    <button id="sections-button" aria-expanded="false" aria-controls="sections" title="Every section of the script">☰ <span id="where"></span></button>
+    <span class="spacer"></span>
+    <span id="listen" title="Whether the words said are followed"></span>
+    <span id="tally" aria-live="polite"></span>
+  </div>
+  <div id="singer" hidden><span id="singing"></span><span id="coming"></span></div>
+  <ol id="sections" hidden></ol>
+  <div id="between" hidden><p id="between-next"></p><div id="join"><img id="join-qr" alt="QR code to sign up to sing" width="220" height="220"><p>Scan to sing<br><small id="join-code"></small></p></div></div>
+  <div id="window"><div id="mark" aria-hidden="true"></div><div id="text" aria-live="off"></div></div>
+  <div id="controls">
+    <button id="back" title="The previous section. Keys: P or [. Controller: LB">⏮<span>Section</span></button>
+    <button id="line-back" title="Back a line. Keys: ↑, ← or Page Up. Controller: d-pad up">▲<span>Line</span></button>
+    <button id="play" title="Move on by itself at the speed below. Key: Space. Controller: A">▶<span>Play</span></button>
+    <button id="line-next" title="On a line. Keys: ↓, → or Page Down (a page turner pedal). Controller: d-pad down">▼<span>Line</span></button>
+    <button id="next" title="The next section. Keys: N or ]. Controller: RB">⏭<span>Section</span></button>
+    <button id="next-singer" hidden title="The song is over: call up the next singer, their song from the top. Key: S. Controller: X">🎤<span>Next singer</span></button>
+    <span class="group"><button id="slower" title="Slower. Key: −. Controller: d-pad left" aria-label="Slower">−</button><span id="speed" title="Speed when playing, 1 to 10"></span><button id="faster" title="Faster. Key: +. Controller: d-pad right" aria-label="Faster">+</button></span>
+    <button id="follow" aria-pressed="false" title="Follow the voice: the word being said is lit, and the script moves with it. Controller: Y">🎙<span>Follow</span></button>
+    <span class="group"><button id="smaller" title="Smaller words (kept on this tablet)" aria-label="Smaller words">A−</button><button id="larger" title="Larger words (kept on this tablet)" aria-label="Larger words">A+</button></span>
+    <button id="mirror" aria-pressed="false" title="Mirrored, for a teleprompter's glass (kept on this tablet)">⇋<span>Mirror</span></button>
+  </div>
+  <p id="said" aria-live="polite"></p>
+</main>
+<script src="/teleprompter.js"></script></body></html>

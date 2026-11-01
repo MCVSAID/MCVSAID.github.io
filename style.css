@@ -161,6 +161,7 @@ body.has-sidebar > header h1 { margin-top:0; }
 .pill.people { background:#3d2f5c; color:#e6dcff; font-weight:600; }
 .pill.rec { background:#b3261e; color:#fff; font-weight:700; } .pill.rec::before { content:'● '; }
 #version { margin:2px 6px 6px; font-size:.78rem; color:#7d93a8; }
+#who { margin:8px 6px 0; font-size:.82rem; }
 #pages #logout { display:flex; align-items:center; gap:12px; width:100%; margin:0; padding:0 10px; background:transparent; border-color:transparent; color:#b7c6d4; text-align:left; }
 #pages #logout:hover { background:#16222d; }
 #bottom-bar, #shade { display:none; }
@@ -182,7 +183,7 @@ body.has-sidebar #result-close { right:max(22px, calc(50vw - 474px - var(--bar) 
   body:not(.rail-open) #pages .event-mode .mode-chip { display:flex; flex-direction:column; align-items:center; gap:2px; width:100%; margin:0; padding:6px 2px; min-height:52px; background:#16222d; border:1px solid var(--edge); border-radius:8px; color:#cfe8fa; font-size:.66rem; line-height:1.1; }
   body:not(.rail-open) #pages .event-mode .mode-chip .icon { color:#5fb4ee; }
   body:not(.rail-open) #pages .group { margin:0 0 6px; padding-top:6px; border-top:1px solid var(--edge); } body:not(.rail-open) #pages .group:first-child { border-top:0; }
-  body:not(.rail-open) #pages .group-name, body:not(.rail-open) #pages .sub, body:not(.rail-open) #version, body:not(.rail-open) #live { display:none; }
+  body:not(.rail-open) #pages .group-name, body:not(.rail-open) #pages .sub, body:not(.rail-open) #version, body:not(.rail-open) #who, body:not(.rail-open) #live { display:none; }
   body:not(.rail-open) #pages .group a, body:not(.rail-open) #pages #logout { flex-direction:column; justify-content:center; gap:3px; padding:8px 2px; min-height:60px; text-align:center; }
   body:not(.rail-open) #pages .group a[aria-current=page]::before { left:-6px; }
   body:not(.rail-open) #pages .label { font-size:.68rem; white-space:normal; line-height:1.15; }

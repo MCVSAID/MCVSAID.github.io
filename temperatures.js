@@ -20,7 +20,7 @@ async function enter(session) {
 }
 document.querySelector('#login').onsubmit = async e => {
   e.preventDefault();
-  try { await enter(await api('/api/login', { password: document.querySelector('#password').value })); }
+  try { await enter(await api('/api/login', { name: document.querySelector('#username').value, password: document.querySelector('#password').value })); }
   catch (error) { result.textContent = error.message; }
 };
 window.concert.resume().then(session => { if (session) enter(session); });

@@ -91,7 +91,7 @@ window.addEventListener('hashchange', () => { if (csrf && part === '/system') sh
 window.addEventListener('popstate', () => { if (csrf) { show(location.pathname.replace(/\/+$/, '') || '/'); window.concert.nav(role, show); } });
 document.querySelector('#login').onsubmit = async event => {
   event.preventDefault();
-  try { await enter(await api('/api/login', { method: 'POST', body: JSON.stringify({ password: document.querySelector('#password').value }) })); }
+  try { await enter(await api('/api/login', { method: 'POST', body: JSON.stringify({ name: document.querySelector('#username').value, password: document.querySelector('#password').value }) })); }
   catch (error) { result.textContent = error.message; }
 };
 // A login made on another page, or before this one was reloaded, is picked up: the password is asked for once.
@@ -165,6 +165,68 @@ async function send(camera, command, parameters = {}, label = command) {
   finally { busy.delete(camera.id); refresh(); settle(); }
 }
 // Runs several commands in order on one camera, stopping at the first that does not succeed.
+// An X3's roll (gimbal.orient), its recentre, work mode and battery, on the camera's card. The phone turns its picture to
+// match as its camera starts, so a roll that turns the picture stops a running camera first and starts it again after.
+const ORIENTS = [['portrait', 'Portrait', 'Roll the phone upright'], ['landscape_left', '⟲ Landscape', 'Roll the phone to landscape, its top to the left (seen from behind it)'],
+  ['landscape_right', 'Landscape ⟳', 'Roll the phone to landscape, its top to the right (seen from behind it)']];
+const ORIENT_ROTATION = { portrait: 90, landscape_left: 0, landscape_right: 180, upside_down: 270 };
+const HANGS = { portrait: 'portrait', landscape_left: 'landscape, top to the left', landscape_right: 'landscape, top to the right', upside_down: 'upside down', between: 'between portrait and landscape' };
+const ROLL_SAID = { turning: 'rolling', arrived: 'there', stuck: 'stopped short (an end stop, or held?)', timed_out: 'took too long; stopped', no_attitude: 'lost how the phone hangs; stopped',
+  hands_on: 'taken over by the arrows', stopped: 'stopped', replaced: 'replaced', not_connected: 'the gimbal disconnected', failed: 'failed' };
+const RECENTRE_SAID = { recentring: 'recentring', restoring: 'recentred; rolling the phone back', done: 'recentred', rolled_back: 'recentred, and the phone rolled back', not_restored: 'recentred, but the phone did not roll back' };
+// Until the phone says the roll is over (and, once there, that its picture's rotation matches), for a stop-roll-start.
+async function rolled(camera, to) {
+  await new Promise(resolve => setTimeout(resolve, 2500));
+  for (const end = Date.now() + 45000; Date.now() < end; await new Promise(resolve => setTimeout(resolve, 1000))) {
+    let cameras = []; try { cameras = (await api('/api/cameras')).cameras || []; } catch (error) { continue; }
+    const o = cameras.find(c => c.id === camera.id)?.gimbal?.orientation, roll = o?.roll;
+    if (!roll || roll.to !== to || roll.state === 'turning') continue;
+    if (roll.state !== 'arrived') throw new Error(ROLL_SAID[roll.state] || roll.state);
+    if (o.rotation === ORIENT_ROTATION[o.now || to]) return;
+  }
+  throw new Error('the phone did not say it was there');
+}
+function x3Block(camera, gimbal, off) {
+  const box = node('div', ''), o = gimbal.orientation || {}, t = camera.telemetry || {};
+  const capturing = t.recording || t.streaming || t.capture?.streamRequested, streaming = t.streaming || t.capture?.streamRequested, recording = t.recording;
+  const rolling = o.roll?.state === 'turning' || ['recentring', 'restoring'].includes(o.recentre);
+  const line = node('p', 'Phone: ');
+  for (const [to, text, title] of ORIENTS) {
+    const b = node('button', text); b.title = title; b.disabled = off || rolling || o.now === to;
+    if (o.now === to) b.setAttribute('aria-pressed', 'true');
+    b.onclick = async () => {
+      const label = `Roll to ${HANGS[to]}`;
+      // The same picture rotation (or a camera that is not running): rolled as it is. Otherwise stopped, rolled, started.
+      if (!capturing || o.rotation === ORIENT_ROTATION[to]) { send(camera, 'gimbal.orient', { to }, label); return; }
+      if (!await concert.sure(`${camera.name}: this stops its ${[streaming && 'stream', recording && 'local recording'].filter(Boolean).join(' and ')}, rolls the phone to ${HANGS[to]} (a few seconds), turns its picture to match, then starts ${recording && streaming ? 'them' : 'it'} again.${recording ? ' The current recording file is closed and a new one begins.' : ''}${to === 'portrait' || o.now === 'portrait' ? ' Its picture changes shape, so check its scene in OBS.' : ''}`, { ok: label })) return;
+      sequence(camera, [streaming && ['Stop SRT', 'stream.stop'], recording && ['Finalize local MP4', 'recording.stop'], ['Roll', 'gimbal.orient', { to }], ['Wait until it is there', () => rolled(camera, to)],
+        recording && ['Start local MP4', 'recording.start'], streaming && ['Start SRT', 'stream.start']].filter(Boolean), label);
+    };
+    line.append(b, ' ');
+  }
+  const centre = node('button', 'Recentre'); centre.disabled = off || rolling; centre.title = 'Back to the centre (as the gimbal’s trigger does); if that rolls the phone too, it is rolled back';
+  centre.onclick = () => send(camera, 'gimbal.recentre', {}, 'Recentre the gimbal');
+  line.append(centre);
+  box.append(line);
+  const said = [o.now ? `It hangs ${HANGS[o.now]}${o.source === 'assumed' ? ' (as last left: the phone’s rotation sensor is not reporting)' : ''}` : 'How it hangs is not known yet'];
+  if (o.roll) said.push(`last roll: ${ROLL_SAID[o.roll.state] || o.roll.state}${o.roll.state === 'turning' && o.roll.left != null ? `, ${Math.round(o.roll.left)}° to go` : ''}`);
+  if (o.recentre) said.push(RECENTRE_SAID[o.recentre]);
+  box.append(node('small', `${said.join('; ')}.`));
+  if (o.picture_right === false) {
+    const warn = node('p', capturing ? 'Its picture is turned for another way up: it comes out sideways until the camera is started again (stop it, then start it).' : 'Its picture will be turned to match when the camera next starts.');
+    if (capturing) warn.className = 'recording-warning';
+    box.append(warn);
+  }
+  const modeRow = node('label', 'Mode ');
+  const mode = document.createElement('select'); mode.setAttribute('aria-label', 'Gimbal work mode'); mode.disabled = off || !gimbal.work_mode;
+  for (const [value, text] of [['ptf', 'Pan & tilt follow'], ['pf', 'Pan follow'], ['lock', 'All locked'], ['pov', 'POV']]) { const option = node('option', text); option.value = value; option.selected = gimbal.work_mode === value; mode.append(option); }
+  if (!gimbal.work_mode) { const option = node('option', 'not read yet'); option.selected = true; option.value = ''; mode.prepend(option); }
+  mode.onchange = () => { if (mode.value) send(camera, 'gimbal.mode', { mode: mode.value }, `Gimbal mode: ${mode.selectedOptions[0].textContent}`); };
+  modeRow.append(mode);
+  const b = gimbal.battery;
+  box.append(modeRow, node('span', b ? ` · Battery ${b.volts.toFixed(2)} V${b.percent != null ? `, about ${b.percent}%` : ''}${b.charging ? ', charging' : ''}` : ' · Battery not read yet'));
+  return box;
+}
 async function sequence(camera, steps, label) {
   if (busy.has(camera.id)) return;
   busy.add(camera.id); refresh();
@@ -173,6 +235,8 @@ async function sequence(camera, steps, label) {
     for (const [name, command, parameters] of steps) {
       activity.set(camera.id, { label: `${label} — step ${done + 1} of ${steps.length}: ${name}`, started: Date.now(), state: 'RUNNING' });
       paintActivity();
+      // A step may be a wait of its own (an X3's roll, until the phone says it is there) rather than a command.
+      if (typeof command === 'function') { await command(); done++; continue; }
       const outcome = await api(`/api/cameras/${encodeURIComponent(camera.id)}/commands`, { method: 'POST', body: JSON.stringify({ request_id: crypto.randomUUID(), command, parameters: parameters || {} }) });
       result.textContent = JSON.stringify(outcome, null, 2);
       if (outcome.state !== 'SUCCEEDED') throw new Error(`${name}: ${outcome.state}${outcome.result?.error ? ` — ${outcome.result.error}` : ''}`);
@@ -503,8 +567,6 @@ function settle() { for (const wait of [700, 1800, 3500]) setTimeout(refresh, wa
 // What the operator has picked in the "how the phones find this manager" list but not yet confirmed. The panel is
 // redrawn every two seconds from what the manager says; without this the list snapped back before "Use this" could be pressed.
 let networkPicked = null;
-// An operator password just made, shown until the page is reloaded: the manager cannot show it again.
-let operatorShown = '';
 let githubApp = null, githubBusy = false;   // the last look at GitHub for a newer camera app, and whether one is under way
 // Why the last request about the manager's own version was refused, shown in its panel.
 let updateSaid = '';
@@ -932,17 +994,11 @@ async function refresh() {
       let access = null; try { access = await api('/api/access'); } catch (error) { access = null; }
       if (access) {
         accessPanel.replaceChildren(node('h3', 'Who else can log in'));
-        const change = async body => { try { const answer = await api('/api/access', { method: 'POST', body: JSON.stringify(body) }); if (answer.operator_password_once) operatorShown = answer.operator_password_once; return answer; } catch (error) { result.textContent = error.message; return null; } finally { refresh(); } };
-        accessPanel.append(node('p', access.operator_password_set ? 'An operator password is set. An operator can run a show but cannot update, restart or pair the phones, delete recordings from them, or change passwords.' : 'No operator password is set, so only the administrator can log in.'));
-        const make = node('button', access.operator_password_set ? 'Make a new operator password' : 'Make an operator password');
-        make.onclick = async () => { if (!access.operator_password_set || await concert.sure('Make a new operator password? The present one stops working and operators are logged out.')) change({ operator_password: 'new' }); };
-        const own = document.createElement('input'); own.type = 'text'; own.autocomplete = 'off'; own.spellcheck = false; own.minLength = 8; own.maxLength = 128; own.placeholder = 'or type your own (8 or more)'; own.setAttribute('aria-label', 'An operator password of your own');
-        const use = node('button', 'Set this password');
-        use.onclick = async () => { if (own.value.length < 8) { result.textContent = 'An operator password is at least 8 characters.'; return; } if (access.operator_password_set && !await concert.sure('Set this operator password? The present one stops working and operators are logged out.')) return; const done = await change({ operator_password: { set: own.value } }); if (done) { operatorShown = ''; own.value = ''; own.blur(); result.textContent = 'Operator password set. It is not kept anywhere readable.'; } };
-        const row = node('div', ''); row.append(make, own, use);
-        if (access.operator_password_set) { const none = node('button', 'Remove it'); none.onclick = async () => { if (await concert.sure('Remove the operator password? Nobody will be able to log in as an operator.')) { operatorShown = ''; change({ operator_password: null }); } }; row.append(none); }
-        accessPanel.append(row);
-        if (operatorShown) { const once = node('p', `Operator password: ${operatorShown}. Write it down now: it is not kept anywhere and cannot be shown again.`); once.className = 'recording-warning'; accessPanel.append(once); }
+        const change = async body => { try { return await api('/api/access', { method: 'POST', body: JSON.stringify(body) }); } catch (error) { result.textContent = error.message; return null; } finally { refresh(); } };
+        // The accounts themselves, each a name with its own password and role, are on the Users page.
+        const accounts = node('p', access.operators ? `${access.operators} operator account${access.operators === 1 ? '' : 's'}. ` : 'No operator accounts, so only administrators can log in. ');
+        const manage = document.createElement('a'); manage.href = '/users'; manage.textContent = 'Add people, change their roles and passwords on the Users page.'; accounts.append(manage);
+        accessPanel.append(accounts);
         // The dashboard on the camera network, for a tablet.
         const net = access.network, offer = node('label', ''), box = document.createElement('input'); box.type = 'checkbox'; box.checked = net.wanted;
         box.onchange = () => change({ network: box.checked });
@@ -951,14 +1007,14 @@ async function refresh() {
         else if (net.running) {
           accessPanel.append(node('small', `On the tablet, joined to the camera Wi-Fi, open ${net.addresses[0]}${net.addresses.length > 1 ? ` (or ${net.addresses.slice(1).join(', ')})` : ''}. If this PC has a firewall, open the port once: sudo ufw allow in ${net.interface ? `on ${net.interface} ` : ''}to any port ${net.port} proto tcp`));
           accessPanel.append(node('small', `To stop the tablet warning about the certificate: on the tablet open ${net.addresses[0]}authority.crt, install the profile it downloads, then switch on full trust for “MCVSAID (this installation)” (on an iPad: Settings › General › About › Certificate Trust Settings). This is done once; it covers this dashboard and Stage Shots.`));
-          if (!access.operator_password_set) { const need = node('small', 'Nobody can log in from the network until an operator password is made.'); need.className = 'recording-warning'; accessPanel.append(need); }
+          if (!access.operators) { const need = node('small', 'Nobody can log in from the network until there is an operator account (Users page).'); need.className = 'recording-warning'; accessPanel.append(need); }
         }
         // Who is logged in now, and a way to log any of them out.
         accessPanel.append(node('p', 'Logged in now:'));
         const ago = at => { if (!at) return ''; const s = Math.max(0, Date.now() / 1000 - at); return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
         const gadget = text => /iPad/.test(text) ? 'iPad' : /iPhone/.test(text) ? 'iPhone' : /Android/.test(text) ? 'Android device' : /Macintosh/.test(text) ? 'Mac' : /Windows/.test(text) ? 'Windows PC' : /Linux/.test(text) ? 'Linux PC' : 'a browser';
         for (const person of access.logged_in) {
-          const line = node('small', `${person.what}, ${person.where}, ${gadget(person.device || '')}, since ${person.since ? new Date(person.since * 1000).toLocaleTimeString() : 'earlier'}, last active ${ago(person.seen)} `);
+          const line = node('small', `${person.who ? `${person.who} (${person.what})` : person.what}, ${person.where}, ${gadget(person.device || '')}, since ${person.since ? new Date(person.since * 1000).toLocaleTimeString() : 'earlier'}, last active ${ago(person.seen)} `);
           const mine = person.what === 'administrator' && person.where === 'this PC' && access.logged_in.filter(p => p.what === 'administrator').length === 1;
           if (!mine) { const end = node('button', 'Log out'); end.onclick = () => change({ end: person.id }); line.append(end); }
           accessPanel.append(line);
@@ -1812,6 +1868,8 @@ async function refresh() {
               if (home.set) homeLine.append(node('span', home.stale ? ' · the phone restarted since it was set: set it again' : ` · pan ${home.pan}°, tilt ${home.tilt}°`));
               turn.append(homeLine);
             }
+            // An X3 (app 0.9.56): roll the phone between portrait and either landscape, recentre, its mode and battery.
+            if (gimbal.can_orient) turn.append(x3Block(camera, gimbal, off));
             // Following someone (app 0.9.27): the phone finds faces in its own picture and turns the gimbal itself; the
             // arrows take over for a few seconds whenever they are used.
             if ((camera.telemetry || {}).capabilities?.gimbal_follow) {

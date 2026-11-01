@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js?v=eae7d69f2c9c"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Users · MCVSAID</title><link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/people.css">
+<body><header><h1>Users</h1><p>Everyone who can log in, by name, each with their own password and one role. What a role may do is the same for everyone who has it; what each person does is recorded under their name.</p></header>
+<form id="login"><label>Your name <input id="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40"></label><label>Password <input id="password" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<main id="users" hidden>
+<section id="roles" class="card">
+  <h2>The roles</h2>
+  <p class="hint"><strong>Administrator</strong>: everything, and only at this PC. <strong>Operator</strong>: runs a show (cameras, streams, recording, shots, the director), at this PC or from a tablet on the camera network; cannot update, restart or pair the phones, delete recordings from them, or change passwords and accounts. <strong>Stage Shots</strong>: chooses shots on the Stage Shots page on a phone, and nothing else.</p>
+  <p class="hint">A new role holds at once for whoever is logged in to that account: given less, they are logged down, or out where the new role does not open the page they are on. A new password, or removing the account, logs it out everywhere.</p>
+</section>
+<section id="once" class="card warn" hidden aria-live="polite"></section>
+<section id="list" class="card"><h2>Accounts</h2><div class="scroll"><table id="accounts"></table></div></section>
+<section class="card">
+  <h2>Add someone</h2>
+  <form id="add" class="row">
+    <label>Name <input id="add-name" type="text" autocomplete="off" spellcheck="false" maxlength="40" required></label>
+    <label>Role <select id="add-role"><option value="operator">Operator</option><option value="stage">Stage Shots</option><option value="admin">Administrator</option></select></label>
+    <label>Password <input id="add-password" type="text" autocomplete="off" spellcheck="false" maxlength="128" placeholder="empty: one is made"></label>
+    <button>Add</button>
+  </form>
+  <p class="hint">A password made here is shown once, to be handed over: it is not kept anywhere readable. One you type is at least 8 characters (12 for an administrator).</p>
+</section>
+</main>
+<pre id="result" aria-live="polite"></pre><script src="/nav.js"></script><script src="/users.js"></script></body></html>

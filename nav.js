@@ -9,20 +9,23 @@ window.concert = {
           ['/cameras', 'Cameras', 'Each phone: its state, its controls, what it shows', null, 'Show', 'camera'],
           ['/stage', 'Stage Shots', 'Choose shots from a picture of the stage', null, 'Show', 'stage'],
           ['/operate', 'Operate', 'Chosen cameras live, steered with an Xbox controller: aim, zoom, cut', null, 'Show', 'gamepad'],
+          ['/karaoke', 'Karaoke', 'Karaoke night: the line of singers, guests signing up from their phones, calling up the next', null, 'Show', 'karaoke'],
+          ['/teleprompter', 'Teleprompter', 'Scripts for whoever speaks to camera, followed word by word as they are read, on a tablet', null, 'Show', 'prompter'],
           ['/temperatures', 'Temperatures', 'Heat now and run by run', null, 'Show', 'heat'],
           ['/director', 'Director', 'How shots are chosen, timing', null, 'Set up', 'director'],
           ['/sound', 'Sound', 'Programme sound, lip sync and Calibrate sync, listening and voice calls', null, 'Set up', 'sound'],
           ['/colour', 'Colour', 'White balance, exposure, chart calibration and LUTs', 'admin', 'Set up', 'colour'],
           ['/people', 'People', 'People on stage recognised with their consent (performers, speakers): stars, who each camera follows (Plus AI)', 'admin', 'Set up', 'people'],
           ['/offload', 'Recordings', 'On the phones and on this PC: the files, and how they are made', null, 'Library', 'recordings'],
-          ['/system', 'System', 'Cameras and devices, network, logins, locations, this PC', 'admin', 'Administration', 'system']],
+          ['/system', 'System', 'Cameras and devices, network, logins, locations, this PC', 'admin', 'Administration', 'system'],
+          ['/users', 'Users', 'Who can log in, by name, and with what rights: add, remove, reset passwords, change roles', 'admin', 'Administration', 'people']],
   // On a phone, these are along the bottom; the rest are under More.
   handy: ['/', '/cameras', '/stage', '/director'],
-  handyIn: { cooking: ['/', '/recipe', '/cameras', '/stage'] },     // in Cooking, the recipe is followed during the show
+  handyIn: { cooking: ['/', '/recipe', '/cameras', '/stage'], karaoke: ['/', '/karaoke', '/cameras', '/stage'] },     // in Cooking, the recipe is followed during the show
   // Pages that sit under one of the above, which is shown as the current one while they are open.
   under: { '/recordings': '/offload', '/phones': '/system', '/locations': '/system' },
   // Pages only for one kind of event (modes.py): shown in the side bar only while it is the one in use.
-  onlyIn: { '/recipe': 'cooking' },
+  onlyIn: { '/recipe': 'cooking', '/karaoke': 'karaoke' },
   inPlace: ['/', '/recipe', '/cameras', '/colour', '/director', '/sound', '/recordings', '/system', '/locations'],   // parts of the one main page: switched without loading anything
   // The tabs within Recordings, the same on its two pages, and System's sections: under their page in the side bar.
   recordingTabs: [['/offload', 'Local recordings (phones)'], ['/recordings', 'PC recordings']],
@@ -76,7 +79,7 @@ window.concert = {
     await this.ask({ title, text: rest.join('\n').trim(), fields: [], cancel: null });
   },
 
-  /** A login already made in this browser, on any page: {csrf, role, away}, or null when there is none. */
+  /** A login already made in this browser, on any page: {csrf, role, away, name}, or null when there is none. */
   async resume() {
     try { const response = await fetch('/api/session'); this.session = response.ok ? await response.json() : null; } catch (error) { this.session = null; }
     return this.session;
@@ -93,6 +96,7 @@ window.concert = {
       document.body.classList.add('has-sidebar');
       document.addEventListener('keydown', event => { if (event.key === 'Escape' && (document.body.classList.contains('menu-open') || document.body.classList.contains('rail-open'))) { const back = document.body.classList.contains('menu-open') ? '#menu-button' : '#widen'; this.menu(false); document.querySelector(back)?.focus(); } });
       setInterval(() => this.poll(), 3000);
+      this.askName();
     }
     bar.replaceChildren();
     const here = location.pathname.replace(/\/+$/, '') || '/', current = this.under[here] || here;
@@ -138,8 +142,12 @@ window.concert = {
     const status = document.createElement('div'); status.id = 'live'; status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-label', 'The show now');
     const version = document.createElement('p'); version.id = 'version';
     const out = document.createElement('button'); out.type = 'button'; out.id = 'logout'; out.innerHTML = `${this.icon('logout')}<span class="label">Log out</span>`;
+    // Who is logged in here, beside the way out.
+    const who = this.session && (this.session.name || ({ admin: 'Administrator', operator: 'Operator' })[role]);
+    const me = document.createElement('p'); me.id = 'who';
+    if (who) { me.textContent = this.session.name ? `${who} · ${({ admin: 'administrator', operator: 'operator' })[role] || role}` : who; out.setAttribute('aria-label', `Log out ${who}`); }
     out.onclick = async () => { try { await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.session?.csrf || '' } }); } catch (error) { /* gone either way */ } location.reload(); };
-    foot.append(status, version, out); bar.append(foot);
+    foot.append(status, me, version, out); bar.append(foot);
     // A phone: the pages used during a show along the bottom, and More for the whole list.
     let bottom = document.querySelector('#bottom-bar');
     if (!bottom) { bottom = document.createElement('nav'); bottom.id = 'bottom-bar'; bottom.setAttribute('aria-label', 'Pages used during a show'); document.body.append(bottom); }
@@ -218,10 +226,33 @@ window.concert = {
   },
 
   /** Takes a fresh /api/cameras answer from the page that asked for it; pages that do not ask are looked after by poll(). */
-  feed(data) { this.latest = data; this.fedAt = Date.now(); this.show(); },
+  feed(data) {
+    // An administrator who has changed this account's role: the page is drawn again for what it may do now.
+    if (this.role && data.role && data.role !== this.role) { location.reload(); return; }
+    this.latest = data; this.fedAt = Date.now(); this.show();
+  },
   async poll() {
     if (!this.session || Date.now() - this.fedAt < 4000) return;
-    try { const response = await fetch('/api/cameras'); if (response.ok) this.feed(await response.json()); } catch (error) { /* said by the page itself */ }
+    try {
+      const response = await fetch('/api/cameras');
+      if (response.ok) this.feed(await response.json());
+      else if (response.status === 401) location.reload();          // logged out: the account was removed, given a new password or a role that does not open this
+    } catch (error) { /* said by the page itself */ }
+  },
+
+  /** An administrator's account from before accounts had names is given one, once, at its first login. */
+  async askName() {
+    if (this.session?.role !== 'admin' || this.session.name || this.askedName) return;
+    this.askedName = true;
+    for (let said = ''; ;) {
+      const answer = await this.ask({ title: 'What is your name?', text: `Everyone now logs in with a name and their own password, and what each does is recorded under their name. Your password stays as it is; from now on, log in with this name.${said ? `\n\n${said}` : ''}`,
+                                      fields: [{ name: 'name', label: 'Your name' }], ok: 'Save', cancel: 'Later' });
+      if (!answer) return;
+      const response = await fetch('/api/users/me/name', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.session.csrf }, body: JSON.stringify({ name: answer.name }) });
+      const reply = await response.json().catch(() => ({}));
+      if (response.ok) { this.session.name = reply.name; this.nav(this.role, this.pick); return; }
+      said = reply.detail || `HTTP ${response.status}`;
+    }
   },
 
   /** How to name what OBS has in its programme: "On air" only while OBS streams or records it, "Programme" when nothing
@@ -284,6 +315,9 @@ window.concert = {
       recipe: '<path d="M6 3h10l3 3v15H6z"/><path d="M16 3v3h3"/><path d="M9 10h7M9 14h7M9 18h4"/>',
       show: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M10 8.5v5l4-2.5z" fill="currentColor"/>',
       camera: '<path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="4"/>',
+      karaoke: '<rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/>',
+      'mode-karaoke': '<rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/>',
+      prompter: '<rect x="4" y="3" width="16" height="13" rx="1.5"/><path d="M7.5 7h9M7.5 10h9M7.5 13h5"/><path d="M12 16v3M8 21h8"/>',
       gamepad: '<path d="M6 9h12a4 4 0 0 1 3.9 4.8l-.8 3.6a2 2 0 0 1-3.4.9L15.5 16h-7l-2.2 2.3a2 2 0 0 1-3.4-.9l-.8-3.6A4 4 0 0 1 6 9z"/><path d="M8 11.5v3M6.5 13h3"/><circle cx="16" cy="12" r=".8"/><circle cx="17.6" cy="14" r=".8"/>',
       stage: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>',
       director: '<path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 9l2-5 15 3-1 2"/><path d="M9 5.2l-1 3.8M14 6.2l-1 2.8"/>',

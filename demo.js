@@ -712,6 +712,140 @@
     return shown;
   }
 
+  // ---- the teleprompter (prompter.py), as the manager answers. The demo hears no voice: following shows a reading
+  // at a steady pace, as a speaker heard by the manager would move it. -----------------------------------------
+  const PROMPT_KIND = { concert: 'lyrics', karaoke: 'lyrics' }, PROMPT_FOLLOW = { concert: false }, READ_PACE = 2.3;
+  function promptParse(text) {
+    const sections = []; let current = null;
+    for (const row of String(text || '').replace(/\r\n/g, '\n').split('\n')) {
+      const heading = row.trimStart().startsWith('##') && row.match(/^##\s*(.*?)\s*(?:\[(read|lyrics|notes)\])?\s*$/i);
+      if (heading) { current = { title: heading[1].slice(0, 120), kind: (heading[2] || PROMPT_KIND[mode()] || 'read').toLowerCase(), lines: [] }; sections.push(current); }
+      else { if (!current) { if (!row.trim()) continue; current = { title: '', kind: PROMPT_KIND[mode()] || 'read', lines: [] }; sections.push(current); } current.lines.push(row.trimEnd()); }
+    }
+    return sections.map(x => ({ title: x.title, kind: x.kind, text: x.lines.join('\n').replace(/^\n+|\n+$/g, '') }));
+  }
+  const promptUnparse = sections => sections.map(x => `## ${x.title}${x.kind === (PROMPT_KIND[mode()] || 'read') ? '' : ` [${x.kind}]`}\n${x.text}\n`).join('\n');
+  const promptWords = text => String(text || '').split('\n').flatMap((row, line) => row.split(/\s+/).filter(Boolean).map(w => ({ w, line })));
+  function prompter() {
+    if (!S.prompter) {
+      const scripts = (S.answers['/api/teleprompter']?.scripts || []).filter(x => !x.own)
+        .map(x => ({ id: x.id, name: x.name, sections: promptParse(S.answers[`/api/teleprompter/scripts/${x.id}`]?.text || '') }));
+      S.prompter = { scripts, script: scripts[0]?.id || null, section: 0, word: 0, playing: false, speed: 4, follow: null, from: 0, at: now(), version: 1 };
+    }
+    return S.prompter;
+  }
+  const promptCooking = () => mode() === 'cooking' && !!R()?.recipe;
+  function promptAll() {
+    const p = prompter(), all = [...p.scripts];
+    if (promptCooking()) all.unshift({ id: 'recipe', name: `The recipe: ${R().recipe.title || 'untitled'}`, own: true, sections: run().map(x => {
+      const say = String(x.short || x.caption || '').trim(), text = String(x.text || '').trim();
+      return { title: `${x.label} · ${x.caption || ''}`.replace(/ · $/, ''), kind: 'read', text: !say || say.toLowerCase() === text.toLowerCase() ? text : `${say}\n${text}` };
+    }) });
+    return all;
+  }
+  const promptScript = () => { const all = promptAll(); return all.find(x => x.id === prompter().script) || all[0] || null; };
+  const promptFollowing = () => prompter().follow ?? (PROMPT_FOLLOW[mode()] ?? true);
+  function promptMoved(section, word = 0) { const p = prompter(), count = promptScript()?.sections.length || 0; if (section != null) p.section = Math.max(0, Math.min(section, count - 1)); p.word = word; p.from = word; p.at = now(); p.version++; }
+  function promptTick() {
+    // The recipe's script keeps to the recipe's step; a followed section is read on at a speaker's pace.
+    const p = prompter(), script = promptScript(); if (!script) return;
+    if (script.id === 'recipe' && S.cook?.current != null && at(S.cook.current) !== p.section && p.followed !== S.cook.current) { p.followed = S.cook.current; promptMoved(at(S.cook.current)); }
+    const section = script.sections[p.section]; if (!section) return;
+    const count = promptWords(section.text).length;
+    if (promptFollowing() && !p.playing && section.kind !== 'notes') {
+      p.word = Math.min(count, p.from + Math.floor(READ_PACE * Math.max(0, now() - p.at)));
+      if (p.word >= count && script.id !== 'recipe' && p.section + 1 < script.sections.length && now() - p.at > count / READ_PACE + 1.5) promptMoved(p.section + 1);
+    }
+  }
+  function promptRead() {
+    const p = prompter(); promptTick();
+    const script = promptScript(), sections = script ? script.sections : [], section = sections[p.section], d = director();
+    return { version: p.version, words: String(p.version), mode: mode(), mode_name: S.answers['/api/event-mode']?.modes?.find(m => m.id === mode())?.short || mode(),
+      script: script?.id || null, section: p.section, word: p.word, kind: section?.kind || 'read', playing: p.playing, speed: p.speed, follow: promptFollowing(),
+      listening: true, behind: false, pace: promptFollowing() && !p.playing ? READ_PACE : 0, heard_ago: promptFollowing() && !p.playing ? 0.2 : null,
+      on_air: d.on_air ? named(d.on_air) : null, recording: !!d.recording, count: sections.length,
+      scripts: promptAll().map(x => ({ id: x.id, name: x.name, own: !!x.own })), sections: sections.map(x => ({ title: x.title, kind: x.kind, words: promptWords(x.text) })),
+      access: { wanted: false, running: false, address: 'https://teleprompter.mcvsaid.local/', pin_set: false, tablets: 0 },
+      ...(mode() === 'karaoke' ? { karaoke: karaokeScreen() } : {}) };
+  }
+  function promptPost(body) {
+    const p = prompter();
+    if ('enabled' in body || 'new_pin' in body || 'set_pin' in body) return refused('In this demo there is no camera network to offer the teleprompter on: open it full screen instead.', 409);
+    if (body.do === 'next_singer') { karaokePost({ do: 'next' }); return answer(promptRead()); }
+    const script = () => promptScript(), recipe = () => script()?.id === 'recipe';
+    if ('script' in body) { p.script = body.script; p.playing = false; promptMoved(recipe() && S.cook?.current != null ? at(S.cook.current) : 0); }
+    if ('word' in body) { p.word = body.word; p.from = body.word; p.at = now(); }
+    if ('section' in body) { if (recipe()) { begin(body.section, 'operator'); p.followed = S.cook.current; } promptMoved(body.section); }
+    const lines = () => { const out = []; promptWords(script()?.sections[p.section]?.text).forEach((w, n) => { (out[w.line] = out[w.line] || [n, n + 1])[1] = n + 1; }); return out.filter(Boolean); };
+    const sectionStep = delta => { if (recipe()) { recipeStart(); const c = S.cook; if (delta > 0) { const n = upcoming(); if (n != null) begin(n, 'operator'); } else begin(c.current == null ? 0 : at(c.current) - 1, 'operator'); p.followed = c.current; promptMoved(at(c.current)); } else promptMoved(p.section + delta); };
+    if (body.do === 'next') sectionStep(1);
+    else if (body.do === 'back') sectionStep(-1);
+    else if (body.do === 'line_next' || body.do === 'line_back') {
+      const all = lines(), here = all.findIndex(([a, b]) => a <= p.word && p.word < b), i = here < 0 ? all.length : here;
+      if (body.do === 'line_next' && i + 1 >= all.length) sectionStep(1);
+      else promptMoved(null, all.length ? all[Math.max(0, Math.min(i + (body.do === 'line_next' ? 1 : -1), all.length - 1))][0] : 0);
+    } else if (body.do === 'top') promptMoved(null, 0);
+    else if (body.do === 'play' || body.do === 'pause') { p.playing = body.do === 'play'; p.from = p.word; p.at = now(); p.version++; }
+    if ('speed' in body) p.speed = Math.max(1, Math.min(10, body.speed));
+    if ('follow' in body) { p.follow = !!body.follow; p.from = p.word; p.at = now(); }
+    p.version++; save(); return answer(promptRead());
+  }
+  // ---- karaoke night (karaoke.py): the line of singers, as recorded, moved here; each song a teleprompter script ----
+  function karaoke() {
+    if (!S.karaoke) { const k = S.answers['/api/karaoke'] || {}; S.karaoke = { code: k.code || 'LUNA', approve: k.approve ?? true, signup: k.signup ?? true, line: (k.line || []).map(e => ({ ...e })) }; }
+    return S.karaoke;
+  }
+  const songName = id => prompter().scripts.find(x => x.id === id)?.name || 'a song no longer on the list';
+  function karaokeScreen() {
+    const k = karaoke(), up = k.line.find(e => e.state === 'up'), next = k.line.filter(e => e.state === 'waiting').slice(0, 3), show = e => ({ name: e.name, song: songName(e.song) });
+    return { up: up ? show(up) : null, next: next.map(show), code: k.signup ? k.code : null };
+  }
+  function karaokeRead() {
+    const k = karaoke(), rows = k.line.map(e => ({ ...e, song_name: songName(e.song) }));
+    return { line: rows, songs: prompter().scripts.map(x => ({ id: x.id, name: x.name })), code: k.code, approve: k.approve, signup: k.signup,
+      up: rows.find(e => e.state === 'up') || null, waiting: rows.filter(e => e.state === 'waiting').length, asked: rows.filter(e => e.state === 'asked').length,
+      join: `https://karaoke.mcvsaid.local/join?code=${k.code}`, screen: 'https://karaoke.mcvsaid.local', mode: mode(), offered: false, version: 1 };
+  }
+  function karaokePost(body) {
+    const k = karaoke(), find = id => k.line.find(e => e.id === id), open = e => e.state === 'asked' || e.state === 'waiting';
+    if (body.do === 'next') {
+      const up = k.line.find(e => e.state === 'up'); if (up) up.state = 'done';
+      const coming = k.line.find(e => e.state === 'waiting');
+      if (coming) { coming.state = 'up'; const p = prompter(); p.script = coming.song; p.playing = false; promptMoved(0); }
+    } else if (body.do === 'new_night') { k.line = []; k.code = 'NOVA'; }
+    if (body.add) {
+      const name = String(body.add.name || '').replace(/[^\p{L}\p{N} '\-.&]/gu, '').trim().slice(0, 24);
+      if (!name) return refused('Give a name');
+      if (!prompter().scripts.some(x => x.id === body.add.song)) return refused('Choose a song from the list');
+      k.line.push({ id: Math.random().toString(16).slice(2, 10), name, song: body.add.song, state: 'waiting', by: 'host', at: now() });
+    }
+    if (body.approve && find(body.approve)?.state === 'asked') find(body.approve).state = 'waiting';
+    if (body.skip && find(body.skip)) find(body.skip).state = 'skipped';
+    if (body.remove) k.line = k.line.filter(e => e.id !== body.remove);
+    if (body.move && find(body.move)) {
+      const entry = find(body.move), rest = k.line.filter(e => open(e) && e !== entry);
+      rest.splice(Math.max(0, Math.min(body.to, rest.length)), 0, entry);
+      k.line = [...k.line.filter(e => !open(e)), ...rest];
+    }
+    if ('signup' in body) k.signup = !!body.signup;
+    if ('approve_asks' in body) k.approve = !!body.approve_asks;
+    save(); return answer(karaokeRead());
+  }
+  function promptScriptPost(body) {
+    const p = prompter();
+    if ('remove' in body) { p.scripts = p.scripts.filter(x => x.id !== body.remove); if (p.script === body.remove) { p.script = promptAll()[0]?.id || null; promptMoved(0); } save(); return answer(promptRead()); }
+    const sections = promptParse(body.text); if (!sections.length) return refused('A script needs some words');
+    let kept = p.scripts.find(x => x.id === body.id);
+    if (!kept) { kept = { id: Math.random().toString(16).slice(2, 10) }; p.scripts.push(kept); }
+    Object.assign(kept, { name: String(body.name || 'Script').trim().slice(0, 80) || 'Script', sections });
+    p.version++; save(); return answer({ ...promptRead(), saved: kept.id });
+  }
+  function promptText(id) {
+    if (id === 'new') return S.answers['/api/teleprompter/scripts/new'] || { id: null, name: '', text: '## Intro\n' };
+    const kept = prompter().scripts.find(x => x.id === id);
+    return kept ? { id: kept.id, name: kept.name, text: promptUnparse(kept.sections) } : null;
+  }
+
   // ---- answers -----------------------------------------------------------------------------------------
   const answer = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   function read(path, query) {
@@ -728,6 +862,9 @@
     if (path === '/api/recipe' && a[path]) return recipeRead();
     if (path === '/api/voice') return voiceRead();
     if (path === '/api/programme-sound') return programmeSound();
+    if (path === '/api/teleprompter') return promptRead();
+    if (path === '/api/karaoke') return karaokeRead();
+    if (path.startsWith('/api/teleprompter/scripts/')) return promptText(decodeURIComponent(path.slice('/api/teleprompter/scripts/'.length)));
     if (path in a) return a[path];
     if (path.startsWith('/api/commands/')) return { state: 'SUCCEEDED', result: { type: 'ack', ok: true } };
     return null;
@@ -905,8 +1042,20 @@
         // Its angles, as the simulated phone reports them: the arrows turn them, a point takes them there.
         if (g.attitude && what === 'gimbal.move') { g.attitude.pan = Math.round(((g.attitude.pan + (p.pan || 0) * 0.27 + 540) % 360 - 180) * 10) / 10; g.attitude.tilt = Math.round(Math.max(-90, Math.min(90, g.attitude.tilt + (p.tilt || 0) * 0.27)) * 10) / 10; }
         if (g.attitude && what === 'gimbal.point') { g.attitude.pan = p.pan_deg; if ('tilt_deg' in p) g.attitude.tilt = p.tilt_deg; g.point = { state: 'arrived', pan_deg: p.pan_deg, tilt_deg: p.tilt_deg ?? null, pan_left: 0 }; }
-        if ('summary' in g) g.summary = (g.moving ? 'Gimbal: connected, moving' : 'Gimbal: connected') + (g.follow ? '; following' : '');
+        // An X3: rolled there at once, its picture turned to match; recentred; its mode as chosen.
+        if (g.orientation && what === 'gimbal.orient') {
+          const rotation = { portrait: 90, landscape_left: 0, landscape_right: 180 }[p.to];
+          Object.assign(g.orientation, { now: p.to, roll_deg: { portrait: 0.4, landscape_left: 89.6, landscape_right: -89.7 }[p.to], rotation, roll: { state: 'arrived', to: p.to, left: 0, by: 'phone' }, recentre: null });
+          if ('picture_right' in g.orientation) g.orientation.picture_right = true;
+          t.rotation = rotation;
+        }
+        if (g.orientation && what === 'gimbal.recentre') g.orientation.recentre = 'done';
+        if (what === 'gimbal.mode' && 'work_mode' in g) g.work_mode = p.mode;
+        if ('summary' in g) g.summary = (g.moving ? 'Gimbal: connected, moving' : 'Gimbal: connected') + (g.follow ? '; following' : '')
+          + (g.orientation?.now ? `; ${{ portrait: 'portrait', landscape_left: 'landscape (top to the left)', landscape_right: 'landscape (top to the right)' }[g.orientation.now] || g.orientation.now}` : '')
+          + (g.battery?.volts ? `; battery ${g.battery.volts.toFixed(2)} V (about ${g.battery.percent}%)` : '');
       }
+      if (what === 'gimbal.orient') note('In the demo the pictures are drawn, so they do not turn with the phone.');
       if (what === 'gimbal.move' && !gimbalNoted) { gimbalNoted = true; note('In the demo the gimbal says it turns, but the pictures are drawn, so nothing moves.'); }
       if (p.look) note('In the demo no other gimbal is near: Move here takes one from another camera.');
       if (what === 'gimbal.follow' && p.on) note('In the demo the camera says it follows the most prominent face, but the pictures are drawn, so nothing moves.');
@@ -1010,6 +1159,28 @@
     if (placing().running) return answer({ detail: 'A look is already being taken' }, 409);
     S.look = { wide: body.wide, started: now() }; save(); return answer(placing());
   }
+  // The Users page: accounts added, renamed, given another role or a new password, or removed, as the manager answers.
+  function usersPost(path, body) {
+    const state = S.answers['/api/users'] || (S.answers['/api/users'] = { users: [], roles: { admin: 'administrator', operator: 'operator', stage: 'Stage Shots' } });
+    const list = state.users, roles = Object.keys(state.roles), made = () => `demo-${Math.random().toString(36).slice(2, 10)}`;
+    const admins = list.filter(u => u.role === 'admin').length;
+    if (path === '/api/users') {
+      const name = String(body.name || '').trim().replace(/\s+/g, ' ');
+      if (!name || name.length > 40) return answer({ detail: 'A name is 1 to 40 characters' }, 400);
+      if (list.some(u => u.name.toLowerCase() === name.toLowerCase())) return answer({ detail: `There is already an account called ${name}` }, 400);
+      if (!roles.includes(body.role)) return answer({ detail: `role must be one of ${roles.join(', ')}` }, 400);
+      list.push({ id: Math.random().toString(16).slice(2, 14), name, role: body.role, since: now(), you: false, logged_in: 0 }); save();
+      return answer({ ...state, ...(body.password ? {} : { password_once: made() }) });
+    }
+    const user = list.find(u => u.id === path.split('/').pop());
+    if (!user) return answer({ detail: 'No such account' }, 404);
+    const last = user.role === 'admin' && admins === 1;
+    if (body.remove) { if (last) return answer({ detail: 'This is the only administrator: make another administrator first' }, 400); list.splice(list.indexOf(user), 1); save(); return answer(state); }
+    if (body.role && body.role !== user.role) { if (last) return answer({ detail: 'This is the only administrator: make another administrator first' }, 400); user.role = body.role; }
+    if (body.name) user.name = String(body.name).trim();
+    save();
+    return answer({ ...state, ...(body.password === 'new' ? { password_once: made() } : {}) });
+  }
   function merge(path, body) {
     const target = S.answers[path];
     if (target && typeof target === 'object' && body && typeof body === 'object' && !Array.isArray(body)) {
@@ -1028,6 +1199,7 @@
     if (method === 'GET') { const data = read(path, query); return data === null ? answer({ detail: 'Not in the demo' }, 404) : answer(data); }
     let body = {}; try { body = init.body ? JSON.parse(init.body) : {}; } catch (error) { body = {}; }
     if (path === '/api/login') return answer(S.answers['/api/session']);
+    if (path.startsWith('/api/users')) return usersPost(path, body);
     if (path === '/api/logout') { note('This is a demo: there is nobody to log out.'); return answer({ logged_out: false }); }
     if (path === '/api/director') return directorPost(body);
     if (path === '/api/event-mode') return kindPost(body);
@@ -1079,6 +1251,9 @@
     if (path === '/api/obs/names') return answer({ sources: {}, scenes: {}, skipped: [] });     // renaming in the demo already carried through
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);
+    if (path === '/api/teleprompter') return promptPost(body);
+    if (path === '/api/karaoke') return karaokePost(body);
+    if (path === '/api/teleprompter/scripts') return promptScriptPost(body);
     if (S.answers['/api/recipe']) {
       const recipeAnswer = { '/api/recipe': loadPost, '/api/recipe/step': stepPost, '/api/recipe/edit': editPost, '/api/recipe/voice': voicePost, '/api/overlay': overlayPost, '/api/recipe/prep': prepPost }[path];
       if (recipeAnswer) return recipeAnswer(body);

@@ -18,7 +18,7 @@ const COLOURS = ['#4cc9f0', '#f4a261', '#90be6d', '#f78fb3', '#b5a1ff', '#ffd166
 const cameraColour = camera => COLOURS[(camera.slot - 1 + COLOURS.length) % COLOURS.length];
 const FRONT = 0.625;            // the middle of a button's lower edge, a quarter round its edge for each side from the top left
 function node(tag, text, className) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e; }
-async function api(path, body) { const r = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: body === undefined ? undefined : JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw Error(d.detail || `HTTP ${r.status}`); return d; }
+async function api(path, body) { const r = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: body === undefined ? undefined : JSON.stringify(body) }); if (r.status === 401 && csrf) location.reload(); const d = await r.json(); if (!r.ok) throw Error(d.detail || `HTTP ${r.status}`); return d; }
 async function act(path, body) { try { const answer = await api(path, body); result.textContent = ''; return answer; } catch (error) { result.textContent = error.message; return null; } finally { refresh(); } }
 
 async function enter(session) {
@@ -28,7 +28,7 @@ async function enter(session) {
 }
 document.querySelector('#login').onsubmit = async e => {
   e.preventDefault();
-  try { await enter(await api('/api/login', { password: document.querySelector('#password').value })); }
+  try { await enter(await api('/api/login', { name: document.querySelector('#username').value, password: document.querySelector('#password').value })); }
   catch (error) { result.textContent = error.message; }
 };
 // A login already made, on this page or another, is picked up without asking again.
