@@ -104,6 +104,7 @@ function fold(key, title) {
   group.addEventListener('toggle', () => { if (group.open) opened.add(key); else opened.delete(key); });
   return group;
 }
+const targetEditing = new Map();                    // camera id -> the saved gimbal target being renamed on its card
 function node(tag, text) { const element = document.createElement(tag); element.textContent = text; return element; }
 // Aiming a camera's gimbal: a move every 300 ms for as long as an arrow is held (each lasts half a second on the phone,
 // so a closed page stops it by itself), and a stop on letting go, wherever that happens: the card is redrawn every two
@@ -1867,6 +1868,57 @@ async function refresh() {
               homeLine.append(go, ' ', keep);
               if (home.set) homeLine.append(node('span', home.stale ? ' · the phone restarted since it was set: set it again' : ` · pan ${home.pan}°, tilt ${home.tilt}°`));
               turn.append(homeLine);
+            }
+            // Saved targets (gimbaltargets.py), for this kind of event: aim it at a thing (the pot), Save as target; then
+            // "show the pot" said aloud, or Go here, turns and zooms it there, and Back puts it back as it was.
+            if (gimbal.targets) {
+              const targets = gimbal.targets, box = node('div', ''); box.className = 'gimbal-targets';
+              const gimbalTarget = async (body, label) => {
+                try { const answer = await api(`/api/cameras/${encodeURIComponent(camera.id)}/gimbal-targets`, { method: 'POST', body: JSON.stringify(body) }); if (answer.did) result.textContent = answer.did; targetEditing.delete(camera.id); refresh(); }
+                catch (error) { concert.tell(`${camera.name}: ${label}: ${error.message}`); }
+              };
+              box.append(node('p', `Saved targets (${targets.mode_name}): `));
+              if (targets.away) {
+                const away = node('p', `On ${targets.away.name} now${targets.away.by === 'voice' ? ', called aloud' : ''}. `); away.className = 'app-version';
+                const back = node('button', 'Back'); back.disabled = off; back.title = `Put it back as it was before: its aim, its zoom, and following if it was (or say “${targets.back}”)`;
+                back.onclick = () => gimbalTarget({ action: 'back' }, 'Back');
+                away.append(back); box.append(away);
+              }
+              const list = node('ul', '');
+              for (const target of targets.list) {
+                const item = node('li', '');
+                if (targetEditing.get(camera.id) === target.id) {
+                  const name = document.createElement('input'); name.type = 'text'; name.maxLength = 40; name.value = target.name; name.setAttribute('aria-label', `Name of ${target.name}`);
+                  const phrases = document.createElement('input'); phrases.type = 'text'; phrases.maxLength = 250; phrases.value = target.phrases.join(', '); phrases.placeholder = 'other words for it, with commas';
+                  phrases.setAttribute('aria-label', `Other words for ${target.name}`);
+                  const keep = node('button', 'Keep'); keep.onclick = () => gimbalTarget({ action: 'change', id: target.id, name: name.value, phrases: phrases.value.split(',').map(p => p.trim()).filter(Boolean) }, 'Change target');
+                  const cancel = node('button', 'Cancel'); cancel.onclick = () => { targetEditing.delete(camera.id); refresh(); };
+                  for (const field of [name, phrases]) field.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); keep.click(); } });
+                  item.append(name, ' ', phrases, ' ', keep, ' ', cancel);
+                } else {
+                  const said = [target.name, ...target.phrases].map(p => `“${p}”`).join(', ');
+                  item.append(node('span', `${target.name}${target.zoom_percent ? ` · ${(target.zoom_percent / 100).toFixed(1)}x` : ''} · heard as ${said}${target.stale ? ' · the phone restarted since it was saved: aim it and save it again' : ''} `));
+                  const go = node('button', 'Go'); go.disabled = off || target.stale; go.title = 'Turn it there now, to check (it stops following until Back)';
+                  go.onclick = () => gimbalTarget({ action: 'go', id: target.id }, `Go to ${target.name}`);
+                  const edit = node('button', 'Rename'); edit.title = 'Change its name, or the other words it is called by';
+                  edit.onclick = () => { targetEditing.set(camera.id, target.id); refresh(); };
+                  const drop = node('button', 'Delete'); drop.onclick = async () => { if (await concert.sure(`Delete the target “${target.name}” from ${camera.name}?`, { ok: 'Delete', danger: true })) gimbalTarget({ action: 'delete', id: target.id }, 'Delete target'); };
+                  item.append(go, ' ', edit, ' ', drop);
+                }
+                list.append(item);
+              }
+              if (targets.list.length) box.append(list);
+              if (targets.list.length < targets.most) {
+                const name = document.createElement('input'); name.type = 'text'; name.maxLength = 40; name.placeholder = 'what it shows: the pot'; name.setAttribute('aria-label', `Name for a new target on ${camera.name}`);
+                const save = node('button', 'Save as target'); save.disabled = off; save.title = 'Aim it (and zoom) with the arrows first: where it points now and its zoom are kept under this name';
+                save.onclick = () => { if (!name.value.trim()) { concert.tell('Give the target a name: what it shows, as you will say it.'); return; } gimbalTarget({ action: 'save', name: name.value }, 'Save as target'); };
+                name.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); save.click(); } });
+                const row = node('div', ''); row.append(name, ' ', save); box.append(row);
+              }
+              box.append(node('small', targets.list.length
+                ? (targets.voice ? `Say “show the ${targets.list[0].name}” (with listening on) to turn it there; “${targets.back}” puts it back as it was, following again if it was.` : 'Target calls are switched off for this kind of event (Director page, Voice).')
+                : `Aim it at something it should show on cue (the pot, the board), then Save as target. Kept for ${targets.mode_name} only.`));
+              turn.append(box);
             }
             // An X3 (app 0.9.56): roll the phone between portrait and either landscape, recentre, its mode and battery.
             if (gimbal.can_orient) turn.append(x3Block(camera, gimbal, off));

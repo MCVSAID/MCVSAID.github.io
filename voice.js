@@ -174,6 +174,34 @@ window.listenTo = (v, pick, disabled) => {
     return box;
   }
 
+  // Saved gimbal targets (gimbaltargets.py): saved on a gimbal camera's card; called aloud ("show the pot") the camera
+  // turns and zooms there, and the way back ("back to me") puts it back as it was.
+  let backDraft = null;
+  function targetCalls(v) {
+    const t = v.targets, box = node('div', ''); box.className = 'voice-cameras';
+    if (!t) return box;
+    box.append(node('h4', 'Saved gimbal targets'));
+    if (!t.cameras.length) { box.append(node('small', `None saved for ${modeName(t.mode)}. On a gimbal camera’s card (Cameras page, Gimbal): aim it at what it should show on cue, such as the pot, then Save as target.`)); return box; }
+    box.append(checkbox(`Turn a gimbal camera to a saved target when it is called, in ${modeName(t.mode)}`, t.switched_on, on => send({ targets_on: on })));
+    const list = node('ul', '');
+    for (const camera of t.cameras) {
+      for (const target of camera.targets) {
+        const item = node('li', `${camera.name}: ${target.name} · heard as ${quoted(target.phrases.map(p => p.phrase))}`);
+        if (target.phrases.some(p => p.shared)) { item.append(node('span', ' · a phrase another target has too: neither acts on it')); item.className = 'recording-warning'; }
+        list.append(item);
+      }
+    }
+    box.append(list);
+    const row = node('p', ''); row.className = 'recipe-load-row';
+    const back = document.createElement('input'); back.type = 'text'; back.size = 40; back.maxLength = 250; back.value = backDraft ?? t.back.join(', ');
+    back.setAttribute('aria-label', 'The way back, phrases with commas'); back.oninput = () => { backDraft = back.value; };
+    row.append(node('span', 'The way back: '), back, ' ',
+      button('Save', () => { const kept = back.value.split(',').map(p => p.trim()).filter(Boolean); backDraft = null; send({ back_phrases: kept }, 'The way back saved.'); }));
+    if (t.back_own) row.append(' ', button('Built-in ones', () => { backDraft = null; send({ back_phrases: [] }, 'The built-in ways back again.'); }));
+    box.append(row, node('small', `Called like a shot (“show the pot”, “let’s see the board”) or said alone (“The pot!”). The camera stops following, turns and zooms to the target, and goes on air once it is there where shot calls are on. The way back returns every camera on a target to where it pointed, its zoom and following, as before its first target.${t.away.length ? ` On a target now: ${t.away.length}.` : ''}`));
+    return box;
+  }
+
   function heardBox(v) {
     const heard = node('div', ''); heard.className = 'recipe-heard'; heard.append(node('h4', 'Heard'));
     if (!v.heard.length) { heard.append(node('small', v.listening ? 'Nothing yet.' : 'Nothing: not listening. Try a phrase below to see what it would do.')); return heard; }
@@ -209,7 +237,7 @@ window.listenTo = (v, pick, disabled) => {
     try_.append(node('span', 'Try a phrase, as if the host said it: '), phrase, act);
     try_.onsubmit = event => { event.preventDefault(); const text = phrase.value.trim(); if (!text) return; phrase.value = ''; send({ say: text }, ''); };
     const message = node('p', said); message.setAttribute('aria-live', 'polite'); if (/not |need|fail|error|refus|must|at most/i.test(said)) message.className = 'recording-warning';
-    parts.push(switches(v, s), hearing(v), sure, cameras(s), zoomCalls(v, s), heardBox(v), try_, node('small', 'It acts on the show as a call would: the camera goes on air.'), message);
+    parts.push(switches(v, s), hearing(v), sure, cameras(s), zoomCalls(v, s), targetCalls(v), heardBox(v), try_, node('small', 'It acts on the show as a call would: the camera goes on air.'), message);
     panel.replaceChildren(...parts);
   }
 

@@ -588,7 +588,9 @@
     }
     if (!r.recipe) return refused('No recipe is loaded', 409);
     const t = now(), entry = { at: t, text: String(body.say).slice(0, 240), sure: 1, typed: true, did: null, why: null }, reasons = [];
-    const shot = shotCall(entry.text, entry);
+    const aimed = targetCall(entry.text, entry);
+    const shot = entry.did ? '' : shotCall(entry.text, entry);
+    if (aimed) reasons.push(aimed);
     if (entry.did) { v.heard.unshift(entry); v.heard = v.heard.slice(0, 10); save(); return answer({ ...recipeRead(), said: entry }); }
     if (shot) reasons.push(shot);
     S.lastCue = S.lastCue || {};
@@ -641,7 +643,7 @@
       if (own) { zooms.own = own; zooms.phrases = [...own.map(p => ({ ...p, source: 'own' })), ...zooms.phrases.filter(p => p.source !== 'own')]; }
     }
     const spotter = recorded.spotter ? { ...recorded.spotter, ...(typeof v.spotter === 'boolean' ? { enabled: v.spotter } : {}) } : null;
-    return { ...recorded, ...(cue ? { enabled: cue.enabled, device: cue.device, source: cue.source, model: cue.model } : {}), spotter, listening: !!(cue ? cue.enabled : recorded.enabled) && (shots.on || mode() === 'cooking'), shots, zooms, heard };
+    return { ...recorded, ...(cue ? { enabled: cue.enabled, device: cue.device, source: cue.source, model: cue.model } : {}), spotter, listening: !!(cue ? cue.enabled : recorded.enabled) && (shots.on || mode() === 'cooking'), shots, zooms, targets: targetsRead(), heard };
   }
   const LEAD = /\b(?:(?:cut|cutting|switch|switching|go|going|jump|change|move|take|let's go|lets go|let's cut|let's switch)\s+(?:back\s+|over\s+|across\s+)?to|over\s+to|back\s+to|show(?:ing)?(?:\s+(?:me|us|them|you|everyone))?|let's\s+see|lets\s+see|let's\s+look\s+at|give\s+(?:me|us)|camera\s+on|bring\s+up)\s+(?:the\s+|that\s+|our\s+|my\s+|this\s+)?$/;
   const FILLER = new Set(['the', 'a', 'shot', 'camera', 'cam', 'angle', 'view', 'please', 'now', 'okay', 'ok', 'and', 'so', 'right', 'go', 'on', 'over', 'there', 'thanks']);
@@ -686,8 +688,9 @@
     if ('say' in body) {
       const text = String(body.say || '').split(/\s+/).join(' ').trim().slice(0, 240); if (!text) return refused('say a phrase, 240 characters at most');
       const entry = { at: now(), text, sure: 1, typed: true, did: null, why: null };
-      const why = shotCall(text, entry);
-      if (!entry.did) entry.why = why || 'no camera called';
+      const aimed = targetCall(text, entry);
+      const why = entry.did ? '' : shotCall(text, entry);
+      if (!entry.did) entry.why = [aimed, why].filter(Boolean).join('; ') || 'no camera called';
       const list = cue ? cue.heard : (S.voiceHeard = S.voiceHeard || []); list.unshift(entry); list.splice(10);
       save(); return answer({ ...voiceRead(), said: entry });
     }
@@ -697,6 +700,8 @@
     if (typeof body.min_confidence === 'number') v.min = body.min_confidence;
     if ('zoom_on' in body) (v.zoomOn = v.zoomOn || {})[mode()] = body.zoom_on;
     if (typeof body.spotter === 'boolean') v.spotter = body.spotter;
+    if (typeof body.targets_on === 'boolean') (v.targetsOn = v.targetsOn || {})[mode()] = body.targets_on;
+    if (Array.isArray(body.back_phrases)) { const kept = body.back_phrases.map(p => String(p).split(/\s+/).join(' ').trim().slice(0, 40)).filter(Boolean).slice(0, 6); (v.back = v.back || {})[mode()] = kept.length ? kept : undefined; }
     if (Array.isArray(body.zoom_phrases)) (v.zoomPhrases = v.zoomPhrases || {})[mode()] = body.zoom_phrases.slice(0, 12).map(p => ({ phrase: String(p.phrase || '').split(/\s+/).join(' ').trim().slice(0, 40), action: p.action, camera: p.camera || 'on_air' })).filter(p => p.phrase);
     if (cue && typeof body.device === 'string') { cue.device = body.device.trim(); cue.source = cue.device || 'BlackHole 2ch'; }
     if (cue && body.model) cue.model = body.model;
@@ -995,6 +1000,89 @@
     save();
     return body.action === 'go' ? answer({ state: 'SUCCEEDED', demo: true }) : answer({ home: g.home });
   }
+  // ---- saved gimbal targets (gimbaltargets.py): kept for each kind of event, as the manager keeps them; "Go" and a
+  // target called aloud set the simulated phone's angles there, "Back" puts back what it was doing. --------------------
+  function targetState(camera, kind = mode()) {
+    const every = S.targets = S.targets || {}, here = every[kind] = every[kind] || {};
+    if (!(camera.id in here)) here[camera.id] = copy(camera.gimbal?.targets || null);
+    return here[camera.id];
+  }
+  function targetGo(camera, target, by) {
+    const t = targetState(camera), g = camera.gimbal, a = camera.telemetry?.gimbal?.attitude || g.attitude;
+    S.targetWas = S.targetWas || {};
+    if (!t.away) S.targetWas[camera.id] = { pan: a?.pan, tilt: a?.tilt, follow: g.follow, performer: g.performer, zoom: camera.telemetry?.zoom_percent };
+    for (const x of [camera.telemetry?.gimbal, g].filter(Boolean)) { x.follow = null; if (x.attitude) { x.attitude.pan = target.pan; x.attitude.tilt = target.tilt; } }
+    g.performer = null;
+    if (target.zoom_percent && camera.telemetry) camera.telemetry.zoom_percent = target.zoom_percent;
+    t.away = { id: target.id, name: target.name, since: now() / 1000, by };
+    camera.gimbal.targets = copy(t);
+    return `${camera.name}: turning to ${target.name}${target.zoom_percent ? `, zooming to ${(target.zoom_percent / 100).toFixed(1)}x` : ''}`;
+  }
+  function targetBack(camera) {
+    const t = targetState(camera), g = camera.gimbal, was = (S.targetWas || {})[camera.id] || {};
+    if (!t?.away) return null;
+    for (const x of [camera.telemetry?.gimbal, g].filter(Boolean)) { x.follow = was.follow || null; if (x.attitude && was.pan != null) { x.attitude.pan = was.pan; x.attitude.tilt = was.tilt; } }
+    g.performer = was.performer || null;
+    if (was.zoom && camera.telemetry) camera.telemetry.zoom_percent = was.zoom;
+    t.away = null; camera.gimbal.targets = copy(t);
+    return `${camera.name}: ${was.follow ? 'following again' : 'back where it was'}`;
+  }
+  function gimbalTargetPost(id, body) {
+    const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
+    const t = camera.gimbal?.targets ? targetState(camera) : null;
+    if (!t) return answer({ detail: 'Gimbal: the camera app cannot turn to a position' }, 409);
+    if (!['save', 'change', 'delete', 'go', 'back'].includes(body.action)) return answer({ detail: 'action is save, change, delete, go or back' }, 400);
+    const tidy = text => String(text || '').split(/\s+/).join(' ').trim().slice(0, 40);
+    const lead = /^(?:show(?:\s+(?:me|us))?|let's\s+see|lets\s+see|cut\s+to|go\s+to|give\s+me)\s+(?:the\s+)?/i;
+    const phrases = list => [...new Set((list || []).map(p => tidy(p).replace(lead, '')).filter(Boolean))].slice(0, 6);
+    const target = t.list.find(x => x.id === body.id);
+    if (['change', 'delete', 'go'].includes(body.action) && !target) return answer({ detail: 'No such target' }, 404);
+    const name = 'name' in body ? (tidy(body.name).replace(lead, '') || tidy(body.name)) : null;
+    if (name !== null && !name) return answer({ detail: 'A name is 1 to 40 characters' }, 400);
+    if (name && t.list.some(x => x.name.toLowerCase() === name.toLowerCase() && x.id !== body.id)) return answer({ detail: `${camera.name} already has a target called ${name}` }, 409);
+    let did = null;
+    if (body.action === 'back') { did = targetBack(camera); if (!did) return answer({ detail: 'no camera is on a saved target' }, 409); }
+    else if (body.action === 'go') { did = targetGo(camera, target, 'operator'); note('In the demo the gimbal says it has turned, but the pictures are drawn, so nothing moves.'); }
+    else if (body.action === 'delete') t.list = t.list.filter(x => x.id !== target.id);
+    else if (body.action === 'change') Object.assign(target, name ? { name } : {}, 'phrases' in body ? { phrases: phrases(body.phrases) } : {});
+    else {
+      if (!name) return answer({ detail: 'Give the target a name: what it shows, as you will say it ("the pot")' }, 400);
+      if (t.list.length >= t.most) return answer({ detail: `${camera.name} has ${t.most} targets already: delete one first` }, 409);
+      const a = camera.telemetry?.gimbal?.attitude || camera.gimbal.attitude; if (!a) return answer({ detail: 'Gimbal: the phone is not reporting where it points' }, 409);
+      t.list.push({ id: Math.random().toString(16).slice(2, 10), name, phrases: phrases(body.phrases), pan: a.pan, tilt: a.tilt, zoom_percent: camera.telemetry?.zoom_percent || null, stale: false });
+    }
+    camera.gimbal.targets = copy(t);
+    save();
+    return answer({ ...(did ? { did } : {}), targets: camera.gimbal.targets });
+  }
+  // A phrase as the manager hears it: a saved target called first ("show the pot"), or the way back; matched as shots are.
+  function targetsRead() {
+    const recorded = ((S.kinds[mode()] || {})['/api/voice'] || S.answers['/api/voice'])?.targets; if (!recorded) return null;
+    const on = (S.voice?.targetsOn || {})[mode()], back = (S.voice?.back || {})[mode()];
+    const cameras = cams().cameras.filter(c => c.gimbal?.targets).map(c => ({ id: c.id, name: c.name, targets: targetState(c).list.map(x => ({ id: x.id, name: x.name, phrases: [x.name, ...x.phrases].map(p => ({ phrase: p, shared: false })) })) })).filter(c => c.targets.length);
+    const away = cams().cameras.filter(c => c.gimbal?.targets && targetState(c).away).map(c => c.id);
+    const switched = on === undefined ? recorded.switched_on : on;
+    return { ...recorded, switched_on: switched, on: switched && cameras.length > 0, cameras, away, ...(back ? { back, back_own: true } : {}) };
+  }
+  function targetCall(text, entry) {
+    const t = targetsRead(); if (!t?.on) return null;
+    const table = { cameras: [...t.cameras.flatMap(c => c.targets.map(x => ({ id: `${c.id}/${x.id}`, name: x.name, phrases: x.phrases.map(p => ({ ...p, source: 'own' })) }))),
+      { id: 'back', name: 'the way back', phrases: t.back.map(p => ({ phrase: p, source: 'own', shared: false })) }] };
+    const call = shotMatch(text, table);
+    if (!call.id) return call.why;
+    if (call.id === 'back') {
+      const done = cams().cameras.filter(c => c.gimbal?.targets && targetState(c).away).map(targetBack);
+      if (!done.length) return `heard “${call.phrase}”, but no camera is on a saved target`;
+      entry.did = done.join('; ');
+    } else {
+      const [cid, tid] = call.id.split('/'), camera = cams().cameras.find(c => c.id === cid);
+      entry.did = targetGo(camera, targetState(camera).list.find(x => x.id === tid), 'voice');
+      const state = voiceRead();
+      if (state?.shots.on && director().usable.includes(cid) && director().on_air !== cid) { cutTo(cid, true); entry.did += `; on air once ${camera.name} is there`; }
+    }
+    entry.kind = 'target'; save();
+    return '';
+  }
   function gimbalPerformerPost(id, body) {
     // One performer by name: the plan's order becomes just them, and it follows by the plan.
     return gimbalPlanPost(id, body.performer ? { order: [body.performer], start: true } : { order: [], start: false });
@@ -1086,6 +1174,7 @@
     const fresh = copy(kind['/api/cameras']);
     for (const k of ['on_air', 'pair', 'scene', 'since', 'enabled', 'recording', 'streaming', 'hold_until', 'cuts']) fresh.director[k] = live[k];
     fresh.cameras.forEach(c => { const was = liveCams.find(x => x.id === c.id); if (was) c.telemetry = was.telemetry; });
+    fresh.cameras.forEach(c => { const kept = S.targets?.[body.mode]?.[c.id]; if (c.gimbal?.targets && kept) c.gimbal.targets = copy(kept); });
     S.answers['/api/cameras'] = fresh;
     const said = kind['/api/scene-chat'];
     if (said && chat()) Object.assign(chat(), { examples: said.examples, mode: said.mode });
@@ -1246,6 +1335,7 @@
       save(); return answer(c.creator);
     }
     const homed = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-home$/); if (homed) return gimbalHomePost(decodeURIComponent(homed[1]), body);
+    const aimed = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-targets$/); if (aimed) return gimbalTargetPost(decodeURIComponent(aimed[1]), body);
     const planned = path.match(/^\/api\/cameras\/([^/]+)\/gimbal-(plan|performer)$/); if (planned) return (planned[2] === 'plan' ? gimbalPlanPost : gimbalPerformerPost)(decodeURIComponent(planned[1]), body);
     const named = path.match(/^\/api\/cameras\/([^/]+)\/name$/); if (named) return renamePost(decodeURIComponent(named[1]), body);
     if (path === '/api/obs/names') return answer({ sources: {}, scenes: {}, skipped: [] });     // renaming in the demo already carried through
