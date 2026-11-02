@@ -193,7 +193,9 @@ function x3Block(camera, gimbal, off) {
   const rolling = o.roll?.state === 'turning' || ['recentring', 'restoring'].includes(o.recentre);
   const line = node('p', 'Phone: ');
   for (const [to, text, title] of ORIENTS) {
-    const b = node('button', text); b.title = title; b.disabled = off || rolling || o.now === to;
+    const reachable = !o.reachable || o.reachable.includes(to);
+    const b = node('button', text); b.title = reachable ? title : 'Past the gimbal’s end stops with the phone top down in its clamp: turn the phone over, then Recentre';
+    b.disabled = off || rolling || o.now === to || !reachable;
     if (o.now === to) b.setAttribute('aria-pressed', 'true');
     b.onclick = async () => {
       const label = `Roll to ${HANGS[to]}`;
