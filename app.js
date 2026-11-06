@@ -35,12 +35,14 @@ const PARTS = {
   '/director': ['#ai-setup', '#director-settings', '#explain', '#face-blur', '#obs-sync'],
   // Sound in a page of its own (2026-10-25): the programme's sound and lip sync, and listening and voice calls.
   '/sound': ['#programme-sound', '#voice-shots'],
+  // Power in a page of its own (2026-11-06): the plugs the chargers are on, and what each one charges.
+  '/power': ['#power'],
   '/recordings': ['#recordings-tabs', '#pc-recordings', '#relay'],
-  '/system': ['#system-tabs', '#devices-setup', '#manager-update', '#release', '#battery', '#silence', '#plug', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#decoding', '#face-blur-system'],
+  '/system': ['#system-tabs', '#devices-setup', '#manager-update', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#decoding', '#face-blur-system'],
 };
 // System's own sections, each a tab: [address after the #, name, its panels]. Done once per installation, phone or venue.
 const SYSTEM = [
-  ['devices', 'Cameras & devices', ['#devices-setup', '#battery', '#silence', '#plug']],
+  ['devices', 'Cameras & devices', ['#devices-setup', '#battery', '#silence']],
   // This PC's manager and the phones' camera app, updated in one place (2026-10-25: "more intuitive").
   ['updates', 'Updates', ['#manager-update', '#release']],
   ['network', 'Network', ['#network']],
@@ -52,7 +54,9 @@ const SYSTEM = [
 const systemTabOf = name => SYSTEM.find(([id, , panels]) => id === name || panels.includes(`#${name}`))?.[0] || 'devices';
 const ADMIN_ONLY = ['/system', '/colour'];
 let part = '/', role = 'admin', systemTab = 'devices';
-let plugFoldOpen = null;                 // the charger plug's settings, opened or closed by hand: kept so across refreshes
+const powerOpen = new Set();             // the Power page's folds opened by hand (a plug's id, 'add', 'login'): kept so across refreshes
+let powerDirty = false;                  // something typed or ticked there and not yet saved: the page is not redrawn under it
+const powerPanel = document.querySelector('#power');
 function show(path) {
   if (path === '/locations') { path = '/system'; systemTab = 'locations'; }
   else if (path === '/system') systemTab = systemTabOf(location.hash.slice(1));
@@ -626,6 +630,152 @@ function scenesButton() {
   button.onclick = () => refreshScenes(button);
   return button;
 }
+// ---- Power (the Power page, plug.py) ----
+const KIND_WORD = { gimbal: 'Gimbal', cooler: 'Cooler', other: '' };
+function plugStateLine(plug, power) {
+  const ago = plug.checked ? ` · read ${Math.max(0, Math.round(Date.now() / 1000 - plug.checked))} s ago` : '';
+  const text = !power.installed ? `Cannot be used here: the package for ${power.brand} plugs is not installed (pip install -r requirements-plug.txt)`
+    : !plug.configured ? `Not ready: give the ${power.brand} account the plugs are in, below`
+    : plug.on === true ? `On${ago}` : plug.on === false ? `Off${ago}`
+    : plug.error ? `${plug.reachable === false ? 'Not answering' : 'Not read'}: ${plug.error}` : 'Reading it…';
+  const line = node('p', text);
+  line.className = plug.on === true ? 'activity done' : plug.configured && plug.on === null && plug.error ? 'activity failed' : 'activity';
+  if (plug.on !== null && (plug.model || plug.nickname)) line.append(node('small', ` (${[plug.nickname, plug.model, plug.address].filter(Boolean).join(', ')})`));
+  return line;
+}
+// A device on a plug's charger, and where it is now: which camera it is on, and a gimbal's battery.
+function deviceWords(device) {
+  const now = device.now;
+  const name = [KIND_WORD[device.kind], device.label || (now && now.name) || (device.kind === 'other' ? '' : device.address)].filter(Boolean).join(': ');
+  if (device.kind === 'other') return name;
+  if (!now) return `${name} · not seen on any camera now`;
+  const battery = now.battery && Number.isFinite(now.battery.percent) ? `, battery ${now.battery.percent}%${now.battery.charging ? ', charging' : ''}` : '';
+  return `${name} · on ${now.camera || 'a camera'}${now.connected ? '' : ' (not connected now)'}${now.armed ? ', armed' : ''}${battery}`;
+}
+async function switchPlug(plug, on) {
+  const name = plug.name || 'this plug';
+  if (!on) {
+    const lines = plug.devices.map(d => `• ${deviceWords(d)}`);
+    const cooling = plug.devices.filter(d => d.kind === 'cooler' && d.now?.armed).map(d => d.now.camera);
+    const warning = cooling.length ? `\n${cooling.join(', ')} ${cooling.length > 1 ? 'are' : 'is'} armed: ${cooling.length > 1 ? 'their coolers stop cooling, and the phones' : 'its cooler stops cooling, and the phone'} will warm up.` : '';
+    const text = lines.length ? `These stop charging:\n${lines.join('\n')}${warning}` : 'Whatever is on its charger stops charging. (Nothing is listed on it yet: say what is, on the Power page.)';
+    if (!await concert.sure(`Switch ${name} off?\n${text}`, { ok: 'Switch off', danger: true })) return;
+  }
+  try { await api('/api/power/switch', { method: 'POST', body: JSON.stringify({ id: plug.id, on }) }); result.textContent = ''; } catch (error) { result.textContent = error.message; }
+  refresh();
+}
+function plugButtons(plug, power) {
+  const row = node('p', '');
+  if (!plug.configured || !power.installed) return row;
+  const on = node('button', 'Switch on'), off = node('button', 'Switch off');
+  on.disabled = plug.on === true; off.disabled = plug.on === false;
+  on.onclick = () => switchPlug(plug, true); off.onclick = () => switchPlug(plug, false);
+  row.append(on, ' ', off);
+  return row;
+}
+// On the Cameras page, once a plug is set up: each plug's state and its switches, in one panel.
+function drawPlugSwitches(power) {
+  const panel = document.querySelector('#plug-switch');
+  panel.replaceChildren(node('h3', 'Power'));
+  for (const plug of power.plugs.filter(p => p.configured)) {
+    const row = node('div', ''); row.className = 'plug-row';
+    const head = node('strong', plug.name || plug.address); const state = plugStateLine(plug, power);
+    state.prepend(head, ': ');
+    row.append(state, plugButtons(plug, power));
+    if (plug.devices.length) row.append(node('small', plug.devices.map(deviceWords).join(' · ')));
+    panel.append(row);
+  }
+  const more = document.createElement('a'); more.href = '/power'; more.textContent = 'What each plug charges…'; panel.append(more);
+}
+function powerFold(key, title, openByDefault) {
+  const fold = document.createElement('details');
+  fold.open = powerOpen.has(key) || (openByDefault && !powerOpen.has(`-${key}`));
+  fold.ontoggle = () => { powerOpen.delete(key); powerOpen.delete(`-${key}`); powerOpen.add(fold.open ? key : `-${key}`); if (!fold.open) powerDirty = false; };
+  fold.append(node('summary', title));
+  fold.addEventListener('input', () => { powerDirty = true; });
+  return fold;
+}
+function powerField(fold, text, value, width, type = 'text') {
+  const input = document.createElement('input'); input.type = type; input.value = value; input.size = width; input.spellcheck = false; input.autocomplete = type === 'password' ? 'new-password' : 'off';
+  const label = node('label', text + ' '), row = node('p', ''); label.append(input); row.append(label); fold.append(row);
+  return input;
+}
+async function powerSave(path, body, button) {
+  if (button) button.disabled = true;
+  try { await api(path, { method: 'POST', body: JSON.stringify(body) }); result.textContent = ''; powerDirty = false; return true; }
+  catch (error) { result.textContent = error.message; if (button) button.disabled = false; return false; }
+  finally { refresh(); }
+}
+// The Power page: each plug, what is on its charger and where those are now; for an administrator, the plugs' settings,
+// which gimbals and coolers each charges, and the one login they are all reached with.
+function drawPower(power, operator) {
+  const panel = powerPanel;
+  panel.replaceChildren(node('p', 'The smart plugs the USB chargers for the gimbals and coolers are on. Nothing switches a plug but its buttons here and on the Cameras page. Say what is on each plug’s charger, so that switching one off says what stops charging.'));
+  if (!power.installed) { const warn = node('p', `Plugs cannot be used here: the package for ${power.brand} plugs is not installed (pip install -r requirements-plug.txt).`); warn.className = 'recording-warning'; panel.append(warn); }
+  if (!power.plugs.length) panel.append(node('p', operator ? 'No plug is set up yet: an administrator adds them here.' : 'No plug is set up yet: add one below.'));
+  for (const plug of power.plugs) {
+    const card = document.createElement('article'); card.className = 'plug';
+    card.append(node('h3', plug.name || `Plug at ${plug.address}`), plugStateLine(plug, power), plugButtons(plug, power));
+    if (plug.devices.length) {
+      card.append(node('p', 'On its charger:'));
+      const list = node('ul', ''); for (const d of plug.devices) list.append(node('li', deviceWords(d))); card.append(list);
+    } else card.append(node('p', 'Nothing listed on its charger yet.'));
+    if (!operator) card.append(plugEditor(plug, power));
+    panel.append(card);
+  }
+  if (power.unplaced.length) {
+    const box = document.createElement('article');
+    box.append(node('h3', 'Not on any plug yet'), node('p', 'Gimbals and coolers the phones report that no plug is said to charge. They may be on batteries, or on a charger not listed here.'));
+    const list = node('ul', ''); for (const d of power.unplaced) list.append(node('li', deviceWords({ kind: d.kind, address: d.address, label: '', now: d }))); box.append(list);
+    panel.append(box);
+  }
+  if (operator) return;
+  if (power.plugs.length < power.max_plugs) {
+    const fold = powerFold('add', 'Add a plug', !power.plugs.length);
+    const address = powerField(fold, `Address (as the ${power.brand} app or the router shows it)`, '', 18), name = powerField(fold, 'Name', '', 24);
+    name.placeholder = 'Charger hub by the stage';
+    const add = node('button', 'Add and check the plug');
+    add.onclick = async () => { if (await powerSave('/api/power/plug', { address: address.value.trim(), name: name.value.trim() }, add)) powerOpen.delete('add'); };
+    fold.append(add, node('p', ''), node('small', 'Give it a fixed address on the router, so that it keeps the one it has here.'));
+    panel.append(fold);
+  }
+  const login = powerFold('login', `${power.brand} login`, !(power.username_set && power.password_set));
+  const username = powerField(login, `${power.brand} account email (${power.username_set ? 'one is saved; leave empty to keep it' : 'the account the plugs are in'})`, '', 28, 'email');
+  const password = powerField(login, `${power.brand} password (${power.password_set ? 'one is saved; leave empty to keep it' : `the same as in the ${power.brand} app`})`, '', 20, 'password');
+  const save = node('button', 'Save and check the plugs'), forget = node('button', 'Forget the login');
+  save.onclick = () => { const body = {}; if (username.value.trim()) body.username = username.value.trim(); if (password.value) body.password = password.value; if (!Object.keys(body).length) body.password = ''; powerSave('/api/power/login', body, save); };
+  forget.onclick = async () => { if (await concert.sure(`Forget the ${power.brand} login saved for the plugs?`, { ok: 'Forget', danger: true })) powerSave('/api/power/login', { forget: true }); };
+  forget.disabled = !(power.username_set || power.password_set);
+  login.append(save, ' ', forget, node('p', ''), node('small', `The manager switches the plugs itself, on this network, without ${power.brand}’s cloud. They want the account’s login even so: it is kept with this PC’s other secrets and is never shown again or exported. A ${power.brand} plug locks itself for a while after several wrong passwords, so a refused login is not tried again until it is saved again.`));
+  panel.append(login);
+}
+// A plug's settings, for an administrator: its address and name, and what is on its charger, ticked from the gimbals
+// and coolers the phones report (known by their Bluetooth addresses) or named by hand.
+function plugEditor(plug, power) {
+  const fold = powerFold(plug.id, 'Change this plug, or what it charges', false);
+  const address = powerField(fold, 'Address', plug.address, 18), name = powerField(fold, 'Name', plug.name, 24);
+  fold.append(node('p', 'On its charger:'));
+  const choices = [...plug.devices.filter(d => d.kind !== 'other'), ...power.unplaced.map(d => ({ kind: d.kind, address: d.address, label: '', now: d }))];
+  const ticks = [];
+  for (const device of choices) {
+    const label = node('label', ''); const box = document.createElement('input'); box.type = 'checkbox'; box.checked = plug.devices.includes(device);
+    label.append(box, ` ${deviceWords(device)}`); fold.append(label, document.createElement('br')); ticks.push([box, device]);
+  }
+  // Those on another plug are not offered here: ticking one there moves it.
+  if (!choices.length) fold.append(node('small', 'No gimbal or cooler is reported by a phone just now that is not on another plug. '));
+  const others = powerField(fold, 'Anything else on it (separated by commas)', plug.devices.filter(d => d.kind === 'other').map(d => d.label).join(', '), 36);
+  others.placeholder = 'Spare phone batteries, a light';
+  const save = node('button', 'Save'), forget = node('button', 'Forget this plug');
+  save.onclick = () => {
+    const devices = ticks.filter(([box]) => box.checked).map(([, d]) => ({ kind: d.kind, address: d.address, label: d.label || d.now?.name || '' }));
+    for (const text of others.value.split(',').map(t => t.trim()).filter(Boolean)) devices.push({ kind: 'other', address: null, label: text.slice(0, 40) });
+    powerSave('/api/power/plug', { id: plug.id, address: address.value.trim(), name: name.value.trim(), devices }, save);
+  };
+  forget.onclick = async () => { if (await concert.sure(`Forget ${plug.name || 'this plug'}?\nIt is left as it is, on or off; the manager no longer switches it.`, { ok: 'Forget', danger: true })) powerSave('/api/power/plug', { id: plug.id, forget: true }); };
+  fold.append(node('p', ''), save, ' ', forget);
+  fold.addEventListener('change', () => { powerDirty = true; });
+  return fold;
+}
 function editing(panel) {
   const active = document.activeElement;
   return !!active && panel.contains(active) && active.matches('input:not([type=checkbox]):not([type=radio]), select, textarea');
@@ -648,7 +798,7 @@ document.addEventListener('keydown', event => {
 async function refresh() {
   try {
     const answer = await api('/api/cameras'); window.concert.feed(answer);
-    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, plug, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically } = answer;
+    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, power, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically } = answer;
     studioSummary = answer.creator || null;          // Creator Studio's framings, for each card's What it shows (shows.js)
     // The cameras in use at this location; those set aside are left out of everything but their own short list.
     const cameras = paired.filter(c => c.in_use !== false), aside = paired.filter(c => c.in_use === false);
@@ -1403,47 +1553,11 @@ async function refresh() {
       };
       if (paired.length) { const list = node('ul', ''); for (const c of paired) list.append(node('li', `${c.name}: ${said(c)}`)); silencePanel.append(list); }
     }
-    // The smart plug the coolers' and gimbals' charger hub is on (plug.py): switched from here and nowhere else. Set up on
-    // the System page, for an administrator; once it is, switched from the Cameras page too, which operators can reach.
-    const plugPanel = document.querySelector('#plug'), plugSwitch = document.querySelector('#plug-switch');
-    const drawPlug = panel => {
-      panel.replaceChildren(node('h3', plug.name ? `Plug: ${plug.name}` : 'Charger plug'));
-      const ago = plug.checked ? ` · read ${Math.max(0, Math.round(Date.now() / 1000 - plug.checked))} s ago` : '';
-      const state = !plug.installed ? `Cannot be used here: the package for ${plug.brand} plugs is not installed (pip install -r requirements-plug.txt)`
-        : !plug.configured ? `Not set up: give its address and the ${plug.brand} account it is in below`
-        : plug.on === true ? `On${ago}` : plug.on === false ? `Off${ago}`
-        : plug.error ? `${plug.reachable === false ? 'Not answering' : 'Not read'}: ${plug.error}` : 'Reading it…';
-      const line = node('p', state); line.className = plug.on === true ? 'activity done' : plug.configured && plug.on === null && plug.error ? 'activity failed' : 'activity';
-      if (plug.on !== null && (plug.model || plug.nickname)) line.append(node('small', ` (${[plug.nickname, plug.model, plug.address].filter(Boolean).join(', ')})`));
-      panel.append(line);
-      if (plug.configured && plug.installed) {
-        const flip = async on => {
-          if (!on && !await concert.sure(`Switch ${plug.name || 'the charger plug'} off?\nWhatever it powers stops charging.`, { ok: 'Switch off', danger: true })) return;
-          try { await api('/api/plug', { method: 'POST', body: JSON.stringify({ on }) }); result.textContent = ''; } catch (error) { result.textContent = error.message; }
-          refresh();
-        };
-        const row = node('p', ''), on = node('button', 'Switch on'), off = node('button', 'Switch off');
-        on.disabled = plug.on === true; off.disabled = plug.on === false;
-        on.onclick = () => flip(true); off.onclick = () => flip(false); row.append(on, ' ', off); panel.append(row);
-      }
-    };
-    if (plug?.configured) drawPlug(plugSwitch); else plugSwitch.hidden = true;      // nothing to show on the Cameras page until it is set up
-    if (plug && !operator && !editing(plugPanel)) {
-      drawPlug(plugPanel);
-      const fold = document.createElement('details'); fold.open = plugFoldOpen ?? !plug.configured; fold.ontoggle = () => { plugFoldOpen = fold.open; }; fold.append(node('summary', 'Plug settings'));
-      const field = (text, value, width, type = 'text') => { const input = document.createElement('input'); input.type = type; input.value = value; input.size = width; input.spellcheck = false; input.autocomplete = 'off'; const label = node('label', text + ' '), row = node('p', ''); label.append(input); row.append(label); fold.append(row); return input; };
-      const address = field(`Address (as the ${plug.brand} app or the router shows it)`, plug.address, 18), name = field('What it powers', plug.name, 24);
-      name.placeholder = 'Charger hub';
-      const username = field(`${plug.brand} account email (${plug.username_set ? 'one is saved; leave empty to keep it' : 'the account the plug is in'})`, '', 28, 'email');
-      const password = field(`${plug.brand} password (${plug.password_set ? 'one is saved; leave empty to keep it' : `the same as in the ${plug.brand} app`})`, '', 20, 'password');
-      password.autocomplete = 'new-password';
-      const save = node('button', 'Save and check the plug'), forget = node('button', 'Forget this plug');
-      const ask = async body => { save.disabled = true; try { await api('/api/plug/settings', { method: 'POST', body: JSON.stringify(body) }); result.textContent = ''; } catch (error) { result.textContent = error.message; } refresh(); };
-      save.onclick = () => { const body = { address: address.value.trim(), name: name.value.trim() }; if (username.value.trim()) body.username = username.value.trim(); if (password.value) body.password = password.value; ask(body); };
-      forget.onclick = async () => { if (await concert.sure(`Forget the plug, its address and the ${plug.brand} login saved for it?`, { ok: 'Forget', danger: true })) ask({ forget: true }); };
-      fold.append(save, ' ', forget, node('p', ''), node('small', `The manager switches the plug itself, on this network, without ${plug.brand}’s cloud; nothing switches it but these buttons. The plug wants the account’s login even so: it is kept with this PC’s other secrets and is never shown again or exported. A ${plug.brand} plug locks itself for a while after several wrong passwords, so a refused login is not tried again until it is saved again.`));
-      plugPanel.append(fold);
-    }
+    // Power (plug.py): the smart plugs the coolers' and gimbals' USB charger hubs are on, each with what is on its
+    // charger, switched from here and nowhere else. Set up by an administrator; switched by operators too, here and
+    // from the Cameras page once a plug is set up.
+    if (power && !powerDirty) drawPower(power, operator);          // not under something typed or ticked and not yet saved
+    if (power?.plugs.some(p => p.configured)) drawPlugSwitches(power); else document.querySelector('#plug-switch').hidden = true;
     // Which app version the manager offers, and whether cameras take it by themselves.
     const panel = document.querySelector('#release');
     if (!editing(panel)) {

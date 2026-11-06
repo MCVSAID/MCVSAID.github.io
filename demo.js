@@ -75,7 +75,7 @@
   function tick() {
     if (!S) return;
     const d = director(), t = now();
-    if (cams().plug) cams().plug.checked = t;
+    for (const plug of cams().power?.plugs || []) plug.checked = t;
     d.usable = cams().cameras.filter(c => c.online && (c.telemetry || {}).streaming).map(c => c.id);
     if (d.on_air && !d.usable.includes(d.on_air) && d.usable.length) cutTo(d.usable[0]);
     if (d.enabled && !(d.hold_until && d.hold_until > t) && t >= S.nextCut && d.usable.length > 1) {
@@ -1176,7 +1176,7 @@
     for (const k of ['on_air', 'pair', 'scene', 'since', 'enabled', 'recording', 'streaming', 'hold_until', 'cuts']) fresh.director[k] = live[k];
     fresh.cameras.forEach(c => { const was = liveCams.find(x => x.id === c.id); if (was) c.telemetry = was.telemetry; });
     fresh.cameras.forEach(c => { const kept = S.targets?.[body.mode]?.[c.id]; if (c.gimbal?.targets && kept) c.gimbal.targets = copy(kept); });
-    fresh.plug = cams().plug;
+    fresh.power = cams().power;
     S.answers['/api/cameras'] = fresh;
     const said = kind['/api/scene-chat'];
     if (said && chat()) Object.assign(chat(), { examples: said.examples, mode: said.mode });
@@ -1292,12 +1292,14 @@
     if (path === '/api/login') return answer(S.answers['/api/session']);
     if (path.startsWith('/api/users')) return usersPost(path, body);
     if (path === '/api/logout') { note('This is a demo: there is nobody to log out.'); return answer({ logged_out: false }); }
-    if (path === '/api/plug') {
-      // The charger plug (plug.py), switched as the manager would: there is no plug here.
+    if (path === '/api/power/switch') {
+      // A charger plug (plug.py), switched as the manager would: there are no plugs here.
+      const plug = (cams().power?.plugs || []).find(p => p.id === body.id);
+      if (!plug) return answer({ detail: 'There is no such plug' }, 404);
       if (typeof body.on !== 'boolean') return answer({ detail: 'on must be true or false' }, 400);
-      Object.assign(cams().plug, { on: body.on, checked: now() }); save(); return answer(cams().plug);
+      Object.assign(plug, { on: body.on, checked: now() }); save(); return answer(cams().power);
     }
-    if (path === '/api/plug/settings') { note('This is a demo: the plug’s settings stay as they are, and no login is kept.'); return answer(cams().plug); }
+    if (path === '/api/power/plug' || path === '/api/power/login') { note('This is a demo: the plugs’ settings stay as they are, and no login is kept.'); return answer(cams().power); }
     if (path === '/api/director') return directorPost(body);
     if (path === '/api/event-mode') return kindPost(body);
     if (path === '/api/scene-chat') return chatPost(body);
