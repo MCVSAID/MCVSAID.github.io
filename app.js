@@ -30,17 +30,17 @@ async function api(path, options = {}) {
 const PARTS = {
   '/': ['#ready', '#recording-alerts', '#program', '#recipe-now', '#fleet', '#heat-plan'],
   '/recipe': ['#recipe'],
-  '/cameras': ['#studio', '#bands', '#cameras'],
+  '/cameras': ['#studio', '#bands', '#plug-switch', '#cameras'],
   '/colour': ['#colour'],
   '/director': ['#ai-setup', '#director-settings', '#explain', '#face-blur', '#obs-sync'],
   // Sound in a page of its own (2026-10-25): the programme's sound and lip sync, and listening and voice calls.
   '/sound': ['#programme-sound', '#voice-shots'],
   '/recordings': ['#recordings-tabs', '#pc-recordings', '#relay'],
-  '/system': ['#system-tabs', '#devices-setup', '#manager-update', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#decoding', '#face-blur-system'],
+  '/system': ['#system-tabs', '#devices-setup', '#manager-update', '#release', '#battery', '#silence', '#plug', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#decoding', '#face-blur-system'],
 };
 // System's own sections, each a tab: [address after the #, name, its panels]. Done once per installation, phone or venue.
 const SYSTEM = [
-  ['devices', 'Cameras & devices', ['#devices-setup', '#battery', '#silence']],
+  ['devices', 'Cameras & devices', ['#devices-setup', '#battery', '#silence', '#plug']],
   // This PC's manager and the phones' camera app, updated in one place (2026-10-25: "more intuitive").
   ['updates', 'Updates', ['#manager-update', '#release']],
   ['network', 'Network', ['#network']],
@@ -52,6 +52,7 @@ const SYSTEM = [
 const systemTabOf = name => SYSTEM.find(([id, , panels]) => id === name || panels.includes(`#${name}`))?.[0] || 'devices';
 const ADMIN_ONLY = ['/system', '/colour'];
 let part = '/', role = 'admin', systemTab = 'devices';
+let plugFoldOpen = null;                 // the charger plug's settings, opened or closed by hand: kept so across refreshes
 function show(path) {
   if (path === '/locations') { path = '/system'; systemTab = 'locations'; }
   else if (path === '/system') systemTab = systemTabOf(location.hash.slice(1));
@@ -647,7 +648,7 @@ document.addEventListener('keydown', event => {
 async function refresh() {
   try {
     const answer = await api('/api/cameras'); window.concert.feed(answer);
-    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically } = answer;
+    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, plug, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically } = answer;
     studioSummary = answer.creator || null;          // Creator Studio's framings, for each card's What it shows (shows.js)
     // The cameras in use at this location; those set aside are left out of everything but their own short list.
     const cameras = paired.filter(c => c.in_use !== false), aside = paired.filter(c => c.in_use === false);
@@ -1401,6 +1402,47 @@ async function refresh() {
         return (q.silenced ? 'silenced' : q.level === 'partly' ? 'partly silenced' : 'not silenced') + vibration;
       };
       if (paired.length) { const list = node('ul', ''); for (const c of paired) list.append(node('li', `${c.name}: ${said(c)}`)); silencePanel.append(list); }
+    }
+    // The smart plug the coolers' and gimbals' charger hub is on (plug.py): switched from here and nowhere else. Set up on
+    // the System page, for an administrator; once it is, switched from the Cameras page too, which operators can reach.
+    const plugPanel = document.querySelector('#plug'), plugSwitch = document.querySelector('#plug-switch');
+    const drawPlug = panel => {
+      panel.replaceChildren(node('h3', plug.name ? `Plug: ${plug.name}` : 'Charger plug'));
+      const ago = plug.checked ? ` · read ${Math.max(0, Math.round(Date.now() / 1000 - plug.checked))} s ago` : '';
+      const state = !plug.installed ? `Cannot be used here: the package for ${plug.brand} plugs is not installed (pip install -r requirements-plug.txt)`
+        : !plug.configured ? `Not set up: give its address and the ${plug.brand} account it is in below`
+        : plug.on === true ? `On${ago}` : plug.on === false ? `Off${ago}`
+        : plug.error ? `${plug.reachable === false ? 'Not answering' : 'Not read'}: ${plug.error}` : 'Reading it…';
+      const line = node('p', state); line.className = plug.on === true ? 'activity done' : plug.configured && plug.on === null && plug.error ? 'activity failed' : 'activity';
+      if (plug.on !== null && (plug.model || plug.nickname)) line.append(node('small', ` (${[plug.nickname, plug.model, plug.address].filter(Boolean).join(', ')})`));
+      panel.append(line);
+      if (plug.configured && plug.installed) {
+        const flip = async on => {
+          if (!on && !await concert.sure(`Switch ${plug.name || 'the charger plug'} off?\nWhatever it powers stops charging.`, { ok: 'Switch off', danger: true })) return;
+          try { await api('/api/plug', { method: 'POST', body: JSON.stringify({ on }) }); result.textContent = ''; } catch (error) { result.textContent = error.message; }
+          refresh();
+        };
+        const row = node('p', ''), on = node('button', 'Switch on'), off = node('button', 'Switch off');
+        on.disabled = plug.on === true; off.disabled = plug.on === false;
+        on.onclick = () => flip(true); off.onclick = () => flip(false); row.append(on, ' ', off); panel.append(row);
+      }
+    };
+    if (plug?.configured) drawPlug(plugSwitch); else plugSwitch.hidden = true;      // nothing to show on the Cameras page until it is set up
+    if (plug && !operator && !editing(plugPanel)) {
+      drawPlug(plugPanel);
+      const fold = document.createElement('details'); fold.open = plugFoldOpen ?? !plug.configured; fold.ontoggle = () => { plugFoldOpen = fold.open; }; fold.append(node('summary', 'Plug settings'));
+      const field = (text, value, width, type = 'text') => { const input = document.createElement('input'); input.type = type; input.value = value; input.size = width; input.spellcheck = false; input.autocomplete = 'off'; const label = node('label', text + ' '), row = node('p', ''); label.append(input); row.append(label); fold.append(row); return input; };
+      const address = field(`Address (as the ${plug.brand} app or the router shows it)`, plug.address, 18), name = field('What it powers', plug.name, 24);
+      name.placeholder = 'Charger hub';
+      const username = field(`${plug.brand} account email (${plug.username_set ? 'one is saved; leave empty to keep it' : 'the account the plug is in'})`, '', 28, 'email');
+      const password = field(`${plug.brand} password (${plug.password_set ? 'one is saved; leave empty to keep it' : `the same as in the ${plug.brand} app`})`, '', 20, 'password');
+      password.autocomplete = 'new-password';
+      const save = node('button', 'Save and check the plug'), forget = node('button', 'Forget this plug');
+      const ask = async body => { save.disabled = true; try { await api('/api/plug/settings', { method: 'POST', body: JSON.stringify(body) }); result.textContent = ''; } catch (error) { result.textContent = error.message; } refresh(); };
+      save.onclick = () => { const body = { address: address.value.trim(), name: name.value.trim() }; if (username.value.trim()) body.username = username.value.trim(); if (password.value) body.password = password.value; ask(body); };
+      forget.onclick = async () => { if (await concert.sure(`Forget the plug, its address and the ${plug.brand} login saved for it?`, { ok: 'Forget', danger: true })) ask({ forget: true }); };
+      fold.append(save, ' ', forget, node('p', ''), node('small', `The manager switches the plug itself, on this network, without ${plug.brand}’s cloud; nothing switches it but these buttons. The plug wants the account’s login even so: it is kept with this PC’s other secrets and is never shown again or exported. A ${plug.brand} plug locks itself for a while after several wrong passwords, so a refused login is not tried again until it is saved again.`));
+      plugPanel.append(fold);
     }
     // Which app version the manager offers, and whether cameras take it by themselves.
     const panel = document.querySelector('#release');
