@@ -7,6 +7,9 @@
   <button id="previous" title="Back to the shot before this one. Controller: Y">Previous shot</button>
   <button id="record" title="Record what OBS is showing to a file (the Show page's Record Programme To File)">Record programme</button>
   <button id="stream" title="Start OBS's own stream, to the service set up in OBS">Start stream</button>
+  <button id="auto-tracking" aria-pressed="true" hidden title="Every camera's gimbal tracking: off, each stops where it points; on again, each follows from there">Tracking: on</button>
+  <button id="auto-zoom" aria-pressed="true" hidden title="The director's automatic crop zoom in OBS, every camera: off, each crop holds where it is">Auto zoom: on</button>
+  <button id="auto-whole" hidden title="Every camera's whole picture now, and the automatic crop zoom off: for a zoom gone wrong">Whole picture</button>
   <label title="Arrows to aim and buttons to zoom under each picture, for steering without a controller"><input type="checkbox" id="onscreen"> On-screen controls</label>
   <label title="How fast the stick and the arrows turn the gimbal, 1 to 10 (kept on this device). Controller: d-pad up / down">Aim <input id="aim-level" type="range" min="1" max="10" step="1" aria-label="Aim sensitivity"> <span id="aim-said"></span></label>
   <label title="How fast the triggers and the zoom buttons zoom, 1 to 10 (kept on this device)">Zoom <input id="zoom-level" type="range" min="1" max="10" step="1" aria-label="Zoom sensitivity"> <span id="zoom-said"></span></label>

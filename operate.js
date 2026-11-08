@@ -108,6 +108,7 @@ function draw() {
   const name = id => state.cameras.find(c => c.id === id)?.name || id;
   document.querySelector('#programme').textContent = director.pair ? `On air: ${director.pair.map(name).join(' + ')}` : director.on_air ? `On air: ${name(director.on_air)}` : director.scene ? `On air: ${director.scene}` : '';
   drawProgramme(director);
+  drawAuto(state.auto);
   document.querySelector('#main-stage').disabled = !director.default_shot;
   document.querySelector('#main-stage').title = director.default_shot ? `Put ${director.default_shot} on air. Controller: View` : 'No stage shot is set: choose a default shot on the Director page';
   // The list of cameras to show.
@@ -162,6 +163,7 @@ function draw() {
     pad.hidden = !onscreen;
     for (const b of pad.querySelectorAll('[data-pan], [data-tilt]')) b.disabled = !camera.online || !gimbal?.connected;
     for (const b of pad.querySelectorAll('[data-zoom]')) b.disabled = !camera.online;
+    buttons.append(...autoButtons(camera, state.auto));
     // Arming, streaming and recording, as on its card: only what fits the camera's state; stopping asks first.
     if (camera.online) buttons.append(...capture(camera, t));
     if (gimbal?.connected) {
@@ -284,6 +286,37 @@ document.querySelector('#stream').onclick = async () => {
   if (!await window.concert.sure(live ? 'Stop OBS streaming? Viewers lose the programme.' : 'Start OBS streaming to the service set up in OBS? The programme goes out to its audience.', { ok: live ? 'Stop stream' : 'Start stream', danger: !!live })) return;
   await act('/api/director', { stream: !live }); refresh();
 };
+// Tracking and the automatic crop zoom (autoswitch.py), as on the camera cards and the Show page: for every camera on
+// the bar, and each camera's own on its tile. Off, a gimbal stops where it points and the crop in OBS holds where it
+// is; Whole picture puts a crop gone wrong back to the whole picture and keeps it there.
+const autoSend = (body, id) => act('/api/auto', { ...body, ...(id ? { camera_id: id } : {}) }).then(answer => { if (answer?.did) result.textContent = answer.did; refresh(); });
+for (const [selector, kind] of [['#auto-tracking', 'tracking'], ['#auto-zoom', 'zoom']]) document.querySelector(selector).onclick = () => autoSend({ kind, on: !state?.auto?.[kind]?.all });
+document.querySelector('#auto-whole').onclick = () => autoSend({ kind: 'zoom', whole: true });
+function drawAuto(auto) {
+  for (const [selector, kind, word] of [['#auto-tracking', 'tracking', 'Tracking'], ['#auto-zoom', 'zoom', 'Auto zoom']]) {
+    const button = document.querySelector(selector), all = auto?.[kind]; button.hidden = !all;
+    if (all) { button.setAttribute('aria-pressed', String(all.all)); button.textContent = `${word}: ${all.all ? 'on' : 'off'}${all.all && all.off.length ? ` (${all.off.length} off)` : ''}`; button.classList.toggle('held', !all.all); }
+  }
+  document.querySelector('#auto-whole').hidden = !auto;
+}
+function autoButtons(camera, auto) {
+  if (!auto) return [];
+  const made = [];
+  for (const [kind, word, about] of [['tracking', 'Tracking', 'its gimbal following someone, aimed from the stage'], ['zoom', 'Auto zoom', 'the director’s crop of its picture in OBS']]) {
+    if (kind === 'tracking' && !(auto.tracking.gimbals || []).includes(camera.id)) continue;
+    const mine = auto[kind].cameras[camera.id]; if (!mine) continue;
+    const b = node('button', `${word}: ${mine.on ? 'on' : 'off'}${mine.own && !mine.on ? ' (every camera off)' : ''}`);
+    b.setAttribute('aria-pressed', String(mine.own)); b.classList.toggle('held', !mine.on);
+    b.title = `${word}, ${about}, for ${camera.name}. Off, it holds where it is; on again, it takes up from there.`;
+    b.onclick = () => autoSend({ kind, on: !mine.own }, camera.id);
+    made.push(b);
+  }
+  const whole = node('button', 'Whole picture'); whole.title = `${camera.name}'s whole picture now, and its automatic crop zoom off, for a zoom gone wrong`;
+  whole.onclick = () => autoSend({ kind: 'zoom', whole: true }, camera.id);
+  made.push(whole);
+  return made;
+}
+
 function drawProgramme(director) {
   const record = document.querySelector('#record'), stream = document.querySelector('#stream');
   const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;

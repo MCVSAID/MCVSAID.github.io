@@ -38,3 +38,6 @@
 .feed .onscreen .zoom { display:flex; align-items:center; gap:6px; } .feed .onscreen .zoom span { color:#b7c6d4; }
 .feed .onscreen button { min-width:44px; min-height:40px; padding:0; font-size:1.1rem; }
 #operate-bar .danger { border-color:#b4232a; }
+
+/* Tracking or the automatic crop zoom switched off (autoswitch.py): in amber, so it is seen at a glance. */
+button.held { border-color:#ffd17a; color:#ffd17a; }
