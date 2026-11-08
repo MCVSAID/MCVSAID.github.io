@@ -795,10 +795,38 @@ document.addEventListener('keydown', event => {
   event.preventDefault(); mark.click();
 });
 
+// Tracking and the zoom switched off and on live (autoswitch.py): for every camera (camera null, the Show page) or one
+// (its card). Off, a gimbal stops where it points and the zoom holds where it is; on again, each takes up from there.
+// The all-cameras switch overrides each camera's own while it is off, and gives each its own back when switched on.
+function autoSwitches(auto, camera, cameras) {
+  const row = node('p', camera ? 'Automatic: ' : 'Automatic tracking and zoom, every camera: '); row.className = 'auto-switches';
+  const flip = async (kind, on) => {
+    try { const answer = await api('/api/auto', { method: 'POST', body: JSON.stringify({ kind, on, ...(camera ? { camera_id: camera.id } : {}) }) }); result.textContent = answer.did; }
+    catch (error) { concert.tell(error.message); }
+    refresh();
+  };
+  const gimbals = auto.tracking.gimbals || [];
+  for (const [kind, word, about] of [['tracking', 'Tracking', 'the gimbal following someone, aimed from the stage and sent home when it loses them'],
+                                      ['zoom', 'Auto zoom', 'the director’s zoom, its telephoto changes, and the phone’s own zooming while it follows']]) {
+    const mine = auto[kind];
+    if (camera && kind === 'tracking' && !gimbals.includes(camera.id)) continue;      // no gimbal: nothing to track with
+    const own = camera ? mine.cameras[camera.id] : null, on = camera ? own.on : mine.all;
+    const box = document.createElement('input'); box.type = 'checkbox'; box.checked = camera ? own.own : mine.all;
+    const label = node('label', ''); label.className = on ? 'auto-on' : 'auto-off';
+    label.title = `${word}: ${about}. Off, it holds where it is; on again, it takes up from there.`;
+    box.onchange = () => flip(kind, box.checked);
+    const off = camera ? (!mine.all ? ' (off for every camera)' : '') : (mine.off.length ? ` (off on ${mine.off.map(id => cameras.find(c => c.id === id)?.name || id).join(', ')})` : '');
+    label.append(box, node('span', ` ${word}${on ? '' : ': off, holding'}${off} `));
+    row.append(label);
+  }
+  if (camera && auto.tracking.held?.[camera.id]) row.append(node('small', ' Follows again when tracking is switched on.'));
+  return row.childElementCount ? row : node('span', '');
+}
+
 async function refresh() {
   try {
     const answer = await api('/api/cameras'); window.concert.feed(answer);
-    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, power, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically } = answer;
+    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, power, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically, auto } = answer;
     studioSummary = answer.creator || null;          // Creator Studio's framings, for each card's What it shows (shows.js)
     // The cameras in use at this location; those set aside are left out of everything but their own short list.
     const cameras = paired.filter(c => c.in_use !== false), aside = paired.filter(c => c.in_use === false);
@@ -855,6 +883,8 @@ async function refresh() {
       const label = node('label', ''); const box = document.createElement('input'); box.type = 'checkbox'; box.checked = director.enabled;
       box.onchange = () => direct({ enabled: box.checked });
       label.append(box, node('span', ` Choose shots automatically (only the model changes the shot: a camera stays on air for as long as it is rated best${director.max_stay_seconds ? `, up to ${director.max_stay_seconds} s` : ''}. Never shows a camera with no picture)`)); program.append(label);
+      // Tracking and the zoom for every camera at once, switched live (autoswitch.py); each camera's own is on its card.
+      if (auto) program.append(autoSwitches(auto, null, cameras));
       const fallback = node('label', 'Default shot, used when the model is not answering or the camera on air loses its picture ');
       const pick = document.createElement('select');
       for (const [value, text] of [['', 'none: stay on the current shot'], ...(director.scenes || []).map(scene => [scene, scene])]) { const option = document.createElement('option'); option.value = value; option.textContent = text; option.selected = (director.default_shot || '') === value; pick.append(option); }
@@ -1710,6 +1740,8 @@ async function refresh() {
         // Its state in one line, then what it is doing and whether it is ready.
         const state = node('p', `${camera.online ? 'Online' : 'Offline (last reported state)'} · ${t.camera_state || 'Unknown'}${t.armed ? ' · armed' : ''}${t.streaming || t.capture?.streamRequested ? ' · streaming' : ''}${t.recording ? ' · RECORDING' : ''}`);
         state.className = `camera-state ${camera.online ? 'online' : 'offline'}`; card.append(state);
+        // This camera's own tracking and zoom switches (autoswitch.py), in view during a show.
+        if (auto) card.append(autoSwitches(auto, camera, cameras));
         const line = node('p', ''); line.className = 'activity'; line.dataset.camera = camera.id; line.hidden = true; card.append(line);
         const ready = readinessPanel(camera); if (ready) card.append(ready);
         // Anything wrong is said on the card itself, never folded away.

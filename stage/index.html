@@ -1,11 +1,11 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js?v=09bb923f53c6"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage Shots</title><link rel="stylesheet" href="/style.css">
+<!doctype html><html lang="en"><meta charset="utf-8"><script src="/demo.js?v=59e824413264"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage Shots</title><link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/stage.css">
 <link rel="stylesheet" href="/scenechat.css">
 <body><header><h1>Stage Shots</h1></header>
 <form id="login"><label>Your name <input id="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40"></label><label>Password <input id="password" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
 <main id="shots" hidden>
 <p id="now" aria-live="polite"></p>
-<div id="bar"><button id="auto" aria-pressed="false">Automatic</button><button id="split" aria-pressed="false">Split screen</button><button id="arrange" aria-pressed="false">Arrange</button><button id="roomview" aria-pressed="false" hidden>Room view</button><button id="roommap" aria-pressed="false" hidden>Room map</button></div>
+<div id="bar"><button id="auto" aria-pressed="false">Automatic</button><button id="split" aria-pressed="false">Split screen</button><button id="arrange" aria-pressed="false">Arrange</button><button id="tracking" aria-pressed="true" hidden title="Every camera's gimbal tracking: off, each stops where it points">Tracking: on</button><button id="autozoom" aria-pressed="true" hidden title="The automatic zoom on every camera: off, it holds where it is">Auto zoom: on</button><button id="roomview" aria-pressed="false" hidden>Room view</button><button id="roommap" aria-pressed="false" hidden>Room map</button></div>
 <p id="hint"></p>
 <div id="stage" aria-label="Cameras, laid out as they stand: the stage at the top, the audience at the bottom">
 <div id="sides" aria-hidden="true"><span class="left"><b>Stage right</b> <small>house left</small></span><span class="back">Back of stage</span><span class="right"><b>Stage left</b> <small>house right</small></span></div>

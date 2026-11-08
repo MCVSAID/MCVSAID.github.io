@@ -856,7 +856,7 @@
   const answer = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   function read(path, query) {
     const a = S.answers;
-    if (path === '/api/stage') return { ...a['/api/stage'], director: director() };
+    if (path === '/api/stage') return { ...a['/api/stage'], director: director(), ...(cams().auto ? { auto: cams().auto } : {}) };
     if (path === '/api/stage/place') return placing();
     if (path === '/api/coolers/job') return S.coolerJob || {};
     if (path === '/api/explain') return explainState();
@@ -1028,6 +1028,33 @@
     t.away = null; camera.gimbal.targets = copy(t);
     return `${camera.name}: ${was.follow ? 'following again' : 'back where it was'}`;
   }
+  // Tracking and the zoom switched off and on live (autoswitch.py), as the manager answers POST /api/auto: per camera,
+  // or for every camera, which overrides each camera's own while off. Off, a following gimbal stops following (and
+  // follows again when switched on); the zoom holds. Nothing moves in the demo: the pictures are drawn.
+  const autoOn = (kind, id) => { const a = cams().auto?.[kind]; return !a || (a.all && !a.off.includes(id)); };
+  const autoWhy = (kind, id) => { const a = cams().auto[kind], word = kind === 'tracking' ? 'Tracking' : 'Auto zoom'; return !a.all ? `${word} is switched off for every camera` : `${word} is switched off for this camera`; };
+  const autoHeld = () => { const a = cams().auto.tracking; a.held = a.held || {}; return a.held; };
+  function autoPost(body) {
+    const auto = cams().auto; if (!auto) return answer({ detail: 'Not in this demo' }, 404);
+    if (!['tracking', 'zoom'].includes(body.kind) || typeof body.on !== 'boolean') return answer({ detail: 'Give kind (tracking or zoom) and on (true or false), and camera_id for one camera' }, 400);
+    const ids = cams().cameras.filter(c => c.in_use !== false).map(c => c.id), id = body.camera_id;
+    if (id !== undefined && !ids.includes(id)) return answer({ detail: 'no such camera in use here' }, 404);
+    const mine = auto[body.kind], before = Object.fromEntries(ids.map(c => [c, autoOn(body.kind, c)]));
+    if (id === undefined) mine.all = body.on;
+    else mine.off = body.on ? mine.off.filter(c => c !== id) : [...new Set([...mine.off, id])];
+    for (const c of ids) mine.cameras[c] = { on: mine.all && !mine.off.includes(c), own: !mine.off.includes(c) };
+    if (body.kind === 'tracking') for (const c of ids) {
+      if (before[c] === mine.cameras[c].on) continue;
+      const camera = cams().cameras.find(x => x.id === c), g = camera.gimbal;
+      if (!g) continue;
+      if (!mine.cameras[c].on) { if (g.follow) { autoHeld()[c] = { following: true, performer: false }; g.follow = null; if (camera.telemetry?.gimbal) camera.telemetry.gimbal.follow = null; } }
+      else if (autoHeld()[c]) { delete autoHeld()[c]; g.follow = { state: 'following', hands_on: false, by: 'face', pace: 'normal' }; if (camera.telemetry?.gimbal) camera.telemetry.gimbal.follow = { ...g.follow }; }
+    }
+    const word = body.kind === 'tracking' ? 'Tracking' : 'Auto zoom', whom = id === undefined ? 'every camera' : named(id);
+    const still = id !== undefined && body.on && !mine.all ? ` (still off: ${autoWhy(body.kind, id).toLowerCase()})` : '';
+    note(body.kind === 'tracking' ? 'In the demo nothing turns: the pictures are drawn. With a real gimbal it stops where it points, and follows again from there.' : 'In the demo the pictures are drawn. Live, the zoom holds where it is, and frames from there once switched on.');
+    save(); return answer({ did: `${word} ${body.on ? 'on' : 'off'} for ${whom}${still}`, auto });
+  }
   function gimbalTargetPost(id, body) {
     const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
     const t = camera.gimbal?.targets ? targetState(camera) : null;
@@ -1093,6 +1120,10 @@
   let gimbalNoted = false;
   function command(id, body) {
     const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);
+    if (body.command === 'gimbal.follow' && body.parameters?.on && !autoOn('tracking', id)) {
+      autoHeld()[id] = { following: true, performer: false }; save();
+      return answer({ detail: `${autoWhy('tracking', id)}: it follows once tracking is switched on again` }, 409);
+    }
     const t = camera.telemetry = camera.telemetry || {}, capture = t.capture = t.capture || {};
     const what = body.command;
     if (what === 'stream.start') { t.streaming = true; capture.streamRequested = true; t.armed = true; }
@@ -1177,6 +1208,7 @@
     fresh.cameras.forEach(c => { const was = liveCams.find(x => x.id === c.id); if (was) c.telemetry = was.telemetry; });
     fresh.cameras.forEach(c => { const kept = S.targets?.[body.mode]?.[c.id]; if (c.gimbal?.targets && kept) c.gimbal.targets = copy(kept); });
     fresh.power = cams().power;
+    if (cams().auto) fresh.auto = cams().auto;               // tracking and the zoom stay as switched, whatever the kind of event
     S.answers['/api/cameras'] = fresh;
     const said = kind['/api/scene-chat'];
     if (said && chat()) Object.assign(chat(), { examples: said.examples, mode: said.mode });
@@ -1325,6 +1357,7 @@
       save(); return answer(programmeSound());
     }
     if (path === '/api/explain') return explainPost(body);
+    if (path === '/api/auto') return autoPost(body);
     const m = path.match(/^\/api\/cameras\/([^/]+)\/commands$/); if (m) return command(decodeURIComponent(m[1]), body);
     const fleet = path.match(/^\/api\/coolers\/(forget|repair)$/); if (fleet) return coolersPost(fleet[1]);
     if (path === '/api/operate/control') return answer({ camera_id: body.camera_id, sent: body.pan || body.tilt ? 'gimbal.move' : null, zoom_percent: null, said: null });

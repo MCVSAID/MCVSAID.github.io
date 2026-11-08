@@ -108,7 +108,10 @@ window.listenTo = (v, pick, disabled) => {
   // phrases only where calls are on by default; this kind of event's own phrases everywhere, each zooming the camera on
   // air or a named one.
   const ACTION_WORDS = { tighter: 'Tighter (1.5×)', wider: 'Wider (1.5×)', close: 'Close-up (just past the telephoto)', normal: 'Back to normal (1×)',
-    find: 'Find me: a gimbal camera turns to whoever called (“I’m over here”)' };
+    find: 'Find me: a gimbal camera turns to whoever called (“I’m over here”)',
+    // Tracking and the zoom switched live (autoswitch.py): “the camera on air” here means every camera.
+    tracking_off: 'Tracking off (every camera, or the one chosen)', tracking_on: 'Tracking on (every camera, or the one chosen)',
+    zoom_off: 'Auto zoom off: holds where it is (every camera, or the one chosen)', zoom_on: 'Auto zoom on (every camera, or the one chosen)' };
   let zoomDraft = null;
   function zoomCalls(v, s) {
     const z = v.zooms, box = node('div', ''); box.className = 'voice-cameras';

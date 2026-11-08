@@ -3,6 +3,7 @@
 article small { display:block; color:#b7c6d4; margin:8px 0; } select { padding:8px; margin:4px; } #capacity-form { margin:16px 0; }
 
 .recording-warning { color:#ffd17a; border-left:3px solid #ffd17a; padding-left:10px; }
+.auto-switches { display:flex; flex-wrap:wrap; gap:4px 14px; align-items:center; } .auto-switches .auto-off { color:#ffd17a; font-weight:600; }
 
 #recordings label { display:block; margin:10px 0; overflow-wrap:anywhere; } #jobs article { margin:12px 0; } #capacity { color:#b7c6d4; } a { color:#8fcafa; }
 
