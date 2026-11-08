@@ -70,7 +70,7 @@
 #room .house { fill:#141d26; } #room .platform { fill:#26384a; stroke:#4d6a82; stroke-width:3; } #room .lip { stroke:#7f97ab; stroke-width:4; }
 #room .words text { fill:#9fb4c6; letter-spacing:.06em; text-transform:uppercase; dominant-baseline:middle; } #room .words .quiet { fill:#7f97ab; }
 #room .words .big { fill:#ffffff1f; font-weight:800; font-size:2.2em; letter-spacing:.12em; } #room .words .side { fill:#ffffff40; font-weight:800; font-size:1.5em; }
-#room .cone { fill-opacity:.09; stroke-opacity:.55; stroke-dasharray:6 6; transition:fill-opacity .15s, stroke-opacity .15s; } #room .cone.chosen { fill-opacity:.3; stroke-opacity:.9; stroke-dasharray:none; }
+#room .cone { pointer-events:none; fill-opacity:.09; stroke-opacity:.55; stroke-dasharray:6 6; transition:fill-opacity .15s, stroke-opacity .15s; } #room .cone.chosen { fill-opacity:.3; stroke-opacity:.9; stroke-dasharray:none; }
 #room .map.choosing .cone:not(.chosen) { fill-opacity:.04; stroke-opacity:.25; }
 #room .mark { cursor:grab; outline:none; } #room .mark:active { cursor:grabbing; }
 #room .mark .body { fill:#0d151c; stroke:currentColor; } #room .mark .head { fill:currentColor; pointer-events:none; }
@@ -125,3 +125,26 @@
 #place .found .plays { margin:4px 0 4px 28px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; } #place .found .plays button { min-height:40px; margin:0; }
 #place .seen rect { fill:none; vector-effect:non-scaling-stroke; } #place .seen rect.person { stroke:#ffffff80; stroke-width:1.5px; stroke-dasharray:4 4; }
 #place .seen rect.performer { stroke-width:2.5px; fill:#ffffff14; } #place small { display:block; color:#b7c6d4; margin:6px 0; }
+
+/* The set (setmap.js): this kind of event's own map under the room map's cameras, and the panel that changes it. */
+#room .set .backdrop { opacity:.85; }
+#room .set .shape rect, #room .set .shape ellipse { fill:#3b556c66; stroke:#8fb0c9; stroke-width:2; }
+#room .set .shape.main rect, #room .set .shape.main ellipse { fill:#4d6a8299; stroke:#cfe3f2; stroke-width:3; }
+#room .set .shape.stove rect { fill:#a2412c66; } #room .set .shape.counter rect, #room .set .shape.prep rect { fill:#6b5a3e88; }
+#room .set .shape.seating rect { fill:#ffffff0d; stroke-dasharray:8 6; } #room .set .shape.mic rect, #room .set .shape.mic ellipse { fill:#ffd16666; }
+#room .set.over-plan .shape:not(.chosen) rect, #room .set.over-plan .shape:not(.chosen) ellipse { fill:#0d151c1a; stroke-dasharray:10 6; }
+#room .set.over-plan .shape:not(.main):not(.chosen) text { opacity:0; } #room .set.over-plan .shape:hover text { opacity:1; }
+#room .set .shape text { fill:#eef4f8; stroke:#0d151c; stroke-width:4; paint-order:stroke; font-weight:700; dominant-baseline:middle; pointer-events:none; }
+#room .set .shape.editable { cursor:grab; } #room .set .shape.chosen rect, #room .set .shape.chosen ellipse { stroke:#ffd166; }
+#room .set .shape .grip { fill:#8fd3ff; stroke:#0d151c; stroke-width:2; cursor:nwse-resize; }
+#room .set .target path { fill:#ffd166; stroke:#0d151c; stroke-width:2; } #room .set .target text { fill:#ffd166; stroke:#0d151c; stroke-width:4; paint-order:stroke; font-size:15px; font-weight:700; }
+#room .set .scalebar line { stroke:#eef4f8; stroke-width:4; } #room .set .scalebar text { fill:#eef4f8; stroke:#0d151c; stroke-width:4; paint-order:stroke; font-size:15px; }
+#room .set .catcher { fill:#8fd3ff14; cursor:crosshair; } #room .set .picked { fill:#ffd166; stroke:#0d151c; stroke-width:2; pointer-events:none; }
+#set { margin-top:12px; padding:14px 16px; background:#1e2c39; border-radius:12px; }
+#set h2 { margin:0 0 6px; font-size:1.15rem; } #set h3 { margin:0 0 6px; font-size:1rem; }
+#set .part { padding:12px 0; border-top:1px solid #2c3e4f; } #set .quiet { color:#b7c6d4; margin:4px 0 8px; } #set .warn { color:#ffb4a8; } #set .step { font-weight:700; color:#ffd166; }
+#set .row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:6px 0; } #set label { display:inline-flex; align-items:center; gap:6px; }
+#set input[type=number] { width:6em; } #set input[type=text] { width:12em; max-width:100%; } #set select { max-width:100%; }
+#set .shapes .row { padding:2px 6px; border-radius:8px; } #set .shapes .row.chosen { outline:2px solid #ffd166; }
+#set .primary { background:#2e7d4f; border-color:#5fbf86; }
+#set .marker canvas { display:block; max-width:100%; max-height:70vh; height:auto; border-radius:8px; margin:8px 0; } #set .marker canvas.pressable { cursor:crosshair; }

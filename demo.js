@@ -1205,9 +1205,15 @@
   }
   function kindPost(body) {
     const kind = S.kinds[body.mode]; if (!kind) return answer({ detail: 'Unknown kind of event' }, 400);
-    const live = director(), liveCams = cams().cameras;
+    const live = director(), liveCams = cams().cameras, before = mode();
     S.answers['/api/event-mode'] = copy(kind['/api/event-mode']);
-    S.answers['/api/stage'] = { ...copy(kind['/api/stage']), layout: S.answers['/api/stage'].layout, widths: S.answers['/api/stage'].widths, room: S.answers['/api/stage'].room };
+    // The room map is the location's, whatever the kind of event, but for a kind with a set of its own (setlayout.py):
+    // that has its own map, cameras and all, kept as the visitor changes it.
+    const leaving = S.answers['/api/stage'].room, recorded = copy(kind['/api/stage']);
+    S.rooms = S.rooms || {};
+    if (leaving?.set?.layout) S.rooms[before] = leaving; else S.plainRoom = leaving;
+    const room = S.rooms[body.mode] || (recorded.room?.set?.layout ? recorded.room : { ...(S.plainRoom || recorded.room), ...geometry(recorded.room), set: recorded.room?.set });
+    S.answers['/api/stage'] = { ...recorded, layout: S.answers['/api/stage'].layout, widths: S.answers['/api/stage'].widths, room };
     const fresh = copy(kind['/api/cameras']);
     for (const k of ['on_air', 'pair', 'scene', 'since', 'enabled', 'recording', 'streaming', 'hold_until', 'cuts']) fresh.director[k] = live[k];
     fresh.cameras.forEach(c => { const was = liveCams.find(x => x.id === c.id); if (was) c.telemetry = was.telemetry; });
@@ -1244,6 +1250,67 @@
     }
     save(); return answer(read('/api/stage'));
   }
+  // The set layout (setlayout.py): the map under the room map's cameras for this kind of event. Changed as the manager
+  // changes it, roughly: the templates are the recorded ones, and a picture is shown for the visit but not kept.
+  const geometry = room => ({ depth: room?.depth ?? 0.8, stage: room?.stage || { left: 0.12, right: 0.88, back: 0, front: 0.36 } });
+  function frameOf(layout) {
+    const main = layout && (layout.shapes.find(s => s.main) || ['stage', 'counter', 'table'].map(k => layout.shapes.find(s => s.kind === k)).find(Boolean));
+    if (!layout) return { depth: 0.8, stage: { left: 0.12, right: 0.88, back: 0, front: 0.36 } };
+    return { depth: layout.depth, stage: main ? { left: main.x, right: +(main.x + main.w).toFixed(4), back: main.y, front: +(main.y + main.h).toFixed(4) } : { left: 0.12, right: 0.88, back: 0, front: 0.36 } };
+  }
+  function setLaid(layout) {
+    const room = S.answers['/api/stage'].room;
+    if (!layout && room.set.layout) { S.rooms = S.rooms || {}; delete S.rooms[mode()]; Object.assign(room, { map: copy((S.plainRoom || room).map) }); }
+    if (layout && !room.set.layout) layout.cameras = copy(room.map);
+    room.set.layout = layout;
+    Object.assign(room, frameOf(layout));
+    if (layout) room.map = layout.cameras;
+    save(); return answer(read('/api/stage'));
+  }
+  function setPost(body) {
+    const room = S.answers['/api/stage'].room, layout = room?.set?.layout ? copy(room.set.layout) : null;
+    if (!room?.set) return answer({ detail: 'Not in the demo' }, 404);
+    if (body.mode && body.mode !== room.set.mode) { note('In the demo, a set is changed for the kind of event in use.'); return answer(read('/api/stage')); }
+    if (body.remove) return setLaid(null);
+    if (body.use) {
+      // A template: the recorded set where this kind of event has one, else a blank floor with one main area to move.
+      const recorded = S.kinds[body.use]?.['/api/stage']?.room?.set?.layout;
+      const made = recorded ? { ...copy(recorded), background: null } : { depth: 0.8, template: body.use === 'blank' ? undefined : body.use, background: null, targets: {},
+        shapes: body.use === 'blank' ? [] : [{ id: 'main01', kind: body.use === 'podcast' || body.use === 'creator' ? 'table' : 'stage', label: body.use === 'podcast' ? 'Table' : 'Stage', x: 0.12, y: 0, w: 0.76, h: 0.36, main: true }] };
+      made.cameras = layout?.cameras || copy(room.map);
+      return setLaid(made);
+    }
+    if (!layout) return answer({ detail: 'This kind of event has no set layout yet: start one from a template first' }, 409);
+    if (body.shapes) {
+      if (!Array.isArray(body.shapes) || body.shapes.length > 40 || body.shapes.filter(s => s.main).length > 1) return answer({ detail: 'shapes are a list of at most 40, with one main area' }, 400);
+      layout.shapes = body.shapes;
+    }
+    if ('width_m' in body) { if (body.width_m === null) delete layout.width_m; else layout.width_m = body.width_m; }
+    if (body.scale) {
+      const { a, b, metres } = body.scale, across = Math.hypot(b[0] - a[0], (b[1] - a[1]) * layout.depth);
+      if (!(across >= 0.02) || !(metres > 0)) return answer({ detail: 'the two points are too close together to measure by: mark two far apart' }, 400);
+      layout.width_m = +(metres / across).toFixed(3);
+    }
+    if ('background' in body) layout.background = null;
+    if (body.targets) { layout.targets = { ...(layout.targets || {}) }; for (const [k, v] of Object.entries(body.targets)) { if (v === null) delete layout.targets[k]; else layout.targets[k] = v; } }
+    return setLaid(layout);
+  }
+  async function setBackgroundPost(blob, query) {
+    const room = S.answers['/api/stage'].room;
+    if (query.get('kind') === 'pdf') return answer({ detail: 'In the demo, PDF plans are not drawn (the manager draws them, in a process of its own): give a picture of the plan, or make a map from photos.' }, 400);
+    let bitmap; try { bitmap = await createImageBitmap(blob); } catch (error) { return answer({ detail: 'a picture is a PNG or a JPEG (or give a PDF floor plan)' }, 400); }
+    const id = `demo${String(Date.now()).padStart(60, '0')}`;
+    S.setPictures = S.setPictures || {}; S.setPictures[id] = URL.createObjectURL(blob);
+    const layout = room.set.layout ? copy(room.set.layout) : { depth: 0.8, shapes: [], targets: {}, cameras: copy(room.map) };
+    layout.background = { image: id, from: query.get('kind') || 'image', w: bitmap.width, h: bitmap.height, ...(query.get('photos') ? { photos: Number(query.get('photos')) } : {}) };
+    layout.depth = Number(query.get('depth')) || Math.min(2, Math.max(0.25, bitmap.height / bitmap.width));
+    if (query.get('width_m')) layout.width_m = Number(query.get('width_m'));
+    note('In the demo the picture is shown while you are here, but not kept: nothing leaves your browser.');
+    return setLaid(layout);
+  }
+  // A picture made in this visit, by its stand-in name, for setmap.js; a recorded one is a file of the site.
+  window.concertDemo = Object.assign(window.concertDemo || {}, { setPicture: id => S.setPictures?.[id] || null });
+
   // What each camera is there to show, as the director page and Stage Shots' who-is-who buttons set it.
   function focusPost(given) {
     const d = director(), focus = { ...(d.camera_focus || {}), ...given };
@@ -1324,7 +1391,10 @@
     await ready;
     const method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
     const path = url.pathname, query = url.search.slice(1);
+    // What a camera sees now, for a map from photos: its recorded picture.
+    const grabbed = method === 'GET' && path.match(/^\/api\/stage\/set\/grab\/([^/]+)$/); if (grabbed) return realFetch(`/api/colour/preview/${grabbed[1]}`);
     if (method === 'GET') { const data = read(path, query); return data === null ? answer({ detail: 'Not in the demo' }, 404) : answer(data); }
+    if (path === '/api/stage/set/background') return setBackgroundPost(init.body, url.searchParams);
     let body = {}; try { body = init.body ? JSON.parse(init.body) : {}; } catch (error) { body = {}; }
     if (path === '/api/login') return answer(S.answers['/api/session']);
     if (path.startsWith('/api/users')) return usersPost(path, body);
@@ -1389,6 +1459,7 @@
     if (path === '/api/obs/names') return answer({ sources: {}, scenes: {}, skipped: [] });     // renaming in the demo already carried through
     if (path === '/api/stage' && (body.layout || body.widths || body.room)) return stagePost(body);
     if (path === '/api/stage/place') return placePost(body);
+    if (path === '/api/stage/set') return setPost(body);
     if (path === '/api/teleprompter') return promptPost(body);
     if (path === '/api/karaoke') return karaokePost(body);
     if (path === '/api/teleprompter/scripts') return promptScriptPost(body);

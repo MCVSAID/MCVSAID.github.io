@@ -30,6 +30,7 @@
   // Where a camera stands, in words: on the stage by the performers' sides, in the house by the audience's.
   function whereWords(entry) {
     const s = room().stage, onStage = entry.y < s.front, side = entry.x < 0.4 ? 0 : entry.x > 0.6 ? 2 : 1;
+    if (room().set?.layout) return `${['on the left', 'in the middle', 'on the right'][side]}, ${onStage ? 'level with the set' : 'in front of the set'}`;
     return onStage ? `on the stage, ${['stage right', 'centre', 'stage left'][side]}` : `in the house, ${['house left', 'in the middle', 'house right'][side]}`;
   }
 
@@ -45,25 +46,29 @@
     canvas.append(over);
     const clip = svg('clipPath', { id: 'room-clip' }, svg('defs', {}, root)); svg('rect', { x: 0, y: 0, width: W, height: h }, clip);
     svg('rect', { x: 0, y: 0, width: W, height: h, class: 'house' }, root);
-    const sx = s.left * W, sw = (s.right - s.left) * W, sd = s.front * h;
-    svg('rect', { x: sx, y: 0, width: sw, height: sd, class: 'platform' }, root);
-    svg('line', { x1: sx, y1: sd, x2: sx + sw, y2: sd, class: 'lip' }, root);
+    const sx = s.left * W, sw = (s.right - s.left) * W, sd = s.front * h, set = room().set?.layout;
     const words = svg('g', { class: 'words', 'aria-hidden': 'true' }, root);
     const say = (text, x, y, anchor, className) => { const t = svg('text', { x, y, 'text-anchor': anchor, class: className || '' }, words); t.textContent = text; return t; };
-    built = {
-      root, over, cones: svg('g', { 'clip-path': 'url(#room-clip)' }, root), marks: svg('g', {}, root), words,
-      text: [say('Back of stage', W / 2, 0, 'middle', 'quiet'), say('Stage', W / 2, sd / 2, 'middle', 'big'),
+    built = { root, over, words, key: setKey(), text: [] };
+    if (set && window.setLayer) window.setLayer(root, W, h, words);          // this kind of event's own set (setmap.js), its shapes named on it
+    else {
+      root.insertBefore(svg('rect', { x: sx, y: 0, width: sw, height: sd, class: 'platform' }), words);
+      root.insertBefore(svg('line', { x1: sx, y1: sd, x2: sx + sw, y2: sd, class: 'lip' }), words);
+      built.text = [say('Back of stage', W / 2, 0, 'middle', 'quiet'), say('Stage', W / 2, sd / 2, 'middle', 'big'),
         say('SR', sx, sd / 2, 'start', 'side'), say('SL', sx + sw, sd / 2, 'end', 'side'), say('Front of stage', W / 2, sd, 'middle', 'quiet'),
-        say('House left', 0, h, 'start'), say('House right', W, h, 'end'), say('House', W / 2, (sd + h) / 2, 'middle', 'big')],
-      key: JSON.stringify([room().depth, s]),
-    };
+        say('House left', 0, h, 'start'), say('House right', W, h, 'end'), say('House', W / 2, (sd + h) / 2, 'middle', 'big')];
+    }
+    built.cones = svg('g', { 'clip-path': 'url(#room-clip)' }, root); built.marks = svg('g', {}, root);
   }
+  // The map is drawn afresh when its shape, its stage or its set changes (the set's cameras are drawn as ever).
+  const setKey = () => { const set = room().set?.layout; return JSON.stringify([room().depth, room().stage, set && { ...set, cameras: undefined }]); };
 
   // Viewbox units for one pixel on screen: icons and words are sized in pixels, so that a phone's are big enough to touch.
   const pixel = () => W / Math.max(1, built.root.clientWidth || panel.querySelector('.map').clientWidth || W);
   function placeWords() {
     const p = pixel(), s = room().stage, h = H(), sx = s.left * W, sw = (s.right - s.left) * W, sd = s.front * h, size = 13 * p, pad = 8 * p;
     built.words.style.fontSize = `${size}px`;
+    if (!built.text.length) return;
     const [back, big, sr, sl, front, hl, hr, house] = built.text;
     back.setAttribute('y', size + pad); big.setAttribute('y', sd / 2); front.setAttribute('y', sd - pad);
     // SR and SL low in the wings, clear of the cameras that usually stand at their middle.
@@ -263,7 +268,7 @@
     if (mixed) hint.textContent = arranging ? 'Drag a button to where its performer stands, or a camera to where it stands and its round handle to where it points. Press a button or a camera to set it exactly. Saved as you let go.'
       : 'Press a camera’s button to put it on air. The room is seen from above: each dot is where a camera stands, its wedge what it sees.';
     else hint.textContent = 'Drag each camera to where it stands and its round handle to where it points; the wedge is what it sees. Press one to set it exactly. Saved as you let go.';
-    if (!built || built.key !== JSON.stringify([room().depth, room().stage])) { build(); drawn.clear(); }
+    if (!built || built.key !== setKey()) { build(); drawn.clear(); }
     seat(mixed);
     // Each button striped in its camera's colour, to find its dot and wedge on the map by.
     state.cameras.forEach(c => tiles.get(c.id)?.style.setProperty('--swatch', mixed && room().map[c.id] ? colour(c) : 'transparent'));
@@ -286,5 +291,5 @@
     window.stageDraw();
   };
   buttons.arrange.addEventListener('click', () => { if (!arranging && open) { open = false; window.stageDraw(); } });
-  window.roomDraw = draw;
+  window.roomDraw = () => { draw(); if (window.setDraw) window.setDraw(); };
 })();
