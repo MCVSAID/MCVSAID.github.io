@@ -800,14 +800,14 @@ document.addEventListener('keydown', event => {
 // The all-cameras switch overrides each camera's own while it is off, and gives each its own back when switched on.
 function autoSwitches(auto, camera, cameras) {
   const row = node('p', camera ? 'Automatic: ' : 'Automatic tracking and zoom, every camera: '); row.className = 'auto-switches';
-  const flip = async (kind, on) => {
-    try { const answer = await api('/api/auto', { method: 'POST', body: JSON.stringify({ kind, on, ...(camera ? { camera_id: camera.id } : {}) }) }); result.textContent = answer.did; }
+  const flip = async (kind, on, whole = false) => {
+    try { const answer = await api('/api/auto', { method: 'POST', body: JSON.stringify({ kind, ...(whole ? { whole: true } : { on }), ...(camera ? { camera_id: camera.id } : {}) }) }); result.textContent = answer.did; }
     catch (error) { concert.tell(error.message); }
     refresh();
   };
   const gimbals = auto.tracking.gimbals || [];
   for (const [kind, word, about] of [['tracking', 'Tracking', 'the gimbal following someone, aimed from the stage and sent home when it loses them'],
-                                      ['zoom', 'Auto zoom', 'the director’s zoom, its telephoto changes, and the phone’s own zooming while it follows']]) {
+                                      ['zoom', 'Auto zoom', 'the director’s crop of the picture in OBS, and its telephoto changes']]) {
     const mine = auto[kind];
     if (camera && kind === 'tracking' && !gimbals.includes(camera.id)) continue;      // no gimbal: nothing to track with
     const own = camera ? mine.cameras[camera.id] : null, on = camera ? own.on : mine.all;
@@ -818,6 +818,13 @@ function autoSwitches(auto, camera, cameras) {
     const off = camera ? (!mine.all ? ' (off for every camera)' : '') : (mine.off.length ? ` (off on ${mine.off.map(id => cameras.find(c => c.id === id)?.name || id).join(', ')})` : '');
     label.append(box, node('span', ` ${word}${on ? '' : ': off, holding'}${off} `));
     row.append(label);
+    if (kind === 'zoom') {
+      // A crop gone wrong: back to the whole picture at once (gliding on air), and the zoom off so that it stays so.
+      const whole = node('button', camera ? 'Whole picture' : 'Every camera whole');
+      whole.title = 'Show the whole picture now and stop the automatic zoom, for a zoom that has gone wrong. Switch Auto zoom on again to let it zoom.';
+      whole.onclick = () => flip('zoom', false, true);
+      row.append(whole);
+    }
   }
   if (camera && auto.tracking.held?.[camera.id]) row.append(node('small', ' Follows again when tracking is switched on.'));
   return row.childElementCount ? row : node('span', '');

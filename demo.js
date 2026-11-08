@@ -1036,6 +1036,9 @@
   const autoHeld = () => { const a = cams().auto.tracking; a.held = a.held || {}; return a.held; };
   function autoPost(body) {
     const auto = cams().auto; if (!auto) return answer({ detail: 'Not in this demo' }, 404);
+    const whole = body.whole === true;
+    if (whole && (body.kind !== 'zoom' || body.on === true)) return answer({ detail: 'whole is for the zoom' }, 400);
+    if (whole) body = { ...body, on: false };
     if (!['tracking', 'zoom'].includes(body.kind) || typeof body.on !== 'boolean') return answer({ detail: 'Give kind (tracking or zoom) and on (true or false), and camera_id for one camera' }, 400);
     const ids = cams().cameras.filter(c => c.in_use !== false).map(c => c.id), id = body.camera_id;
     if (id !== undefined && !ids.includes(id)) return answer({ detail: 'no such camera in use here' }, 404);
@@ -1052,8 +1055,10 @@
     }
     const word = body.kind === 'tracking' ? 'Tracking' : 'Auto zoom', whom = id === undefined ? 'every camera' : named(id);
     const still = id !== undefined && body.on && !mine.all ? ` (still off: ${autoWhy(body.kind, id).toLowerCase()})` : '';
-    note(body.kind === 'tracking' ? 'In the demo nothing turns: the pictures are drawn. With a real gimbal it stops where it points, and follows again from there.' : 'In the demo the pictures are drawn. Live, the zoom holds where it is, and frames from there once switched on.');
-    save(); return answer({ did: `${word} ${body.on ? 'on' : 'off'} for ${whom}${still}`, auto });
+    note(body.kind === 'tracking' ? 'In the demo nothing turns: the pictures are drawn. With a real gimbal it stops where it points, and follows again from there.'
+      : whole ? 'In the demo the pictures are drawn. Live, the picture glides out to the whole of it and stays there until Auto zoom is on again.'
+      : 'In the demo the pictures are drawn. Live, the crop in OBS holds where it is (or as you frame it by hand in OBS), and frames from there once switched on.');
+    save(); return answer({ did: whole ? `${id === undefined ? 'Every camera' : named(id)}: whole picture; ${word} off for ${whom}` : `${word} ${body.on ? 'on' : 'off'} for ${whom}${still}`, auto });
   }
   function gimbalTargetPost(id, body) {
     const camera = cams().cameras.find(c => c.id === id); if (!camera) return answer({ detail: 'No such camera' }, 404);

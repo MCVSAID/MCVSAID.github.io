@@ -13,7 +13,7 @@ const places = {}, sizes = {}, talls = {}, marks = {}, tiles = new Map();
 const stage = document.querySelector('#stage'), result = document.querySelector('#result'), hint = document.querySelector('#hint'), now = document.querySelector('#now');
 const zones = { single: document.querySelector('#performers'), wide: document.querySelector('#wides'), crowd: document.querySelector('#crowds') };
 const buttons = { auto: document.querySelector('#auto'), split: document.querySelector('#split'), arrange: document.querySelector('#arrange'),
-  tracking: document.querySelector('#tracking'), autozoom: document.querySelector('#autozoom') };
+  tracking: document.querySelector('#tracking'), autozoom: document.querySelector('#autozoom'), whole: document.querySelector('#wholepicture') };
 // Each camera's colour, by its slot: its wedge here and on the room map, and its outline when placing from the wide shot.
 const COLOURS = ['#4cc9f0', '#f4a261', '#90be6d', '#f78fb3', '#b5a1ff', '#ffd166', '#2ec4b6', '#ff7b72'];
 const cameraColour = camera => COLOURS[(camera.slot - 1 + COLOURS.length) % COLOURS.length];
@@ -114,6 +114,7 @@ function draw() {
     const all = state.auto?.[kind]; button.hidden = !all;
     if (all) { button.setAttribute('aria-pressed', String(all.all)); button.textContent = `${word}: ${all.all ? 'on' : 'off'}${all.all && all.off.length ? ` (${all.off.length} off)` : ''}`; }
   }
+  buttons.whole.hidden = !state.auto;
   buttons.split.setAttribute('aria-pressed', String(splitting)); buttons.arrange.setAttribute('aria-pressed', String(arranging));
   buttons.split.disabled = arranging || !Object.keys(director.splits || {}).length;
   buttons.arrange.textContent = arranging ? 'Done arranging' : 'Arrange';
@@ -449,6 +450,7 @@ function wire(tile, id) {
 buttons.auto.onclick = () => act('/api/director', { enabled: !state?.director.enabled });
 buttons.tracking.onclick = () => act('/api/auto', { kind: 'tracking', on: !state?.auto?.tracking.all });
 buttons.autozoom.onclick = () => act('/api/auto', { kind: 'zoom', on: !state?.auto?.zoom.all });
+buttons.whole.onclick = () => act('/api/auto', { kind: 'zoom', whole: true });
 buttons.split.onclick = () => { splitting = !splitting; picked = null; draw(); };
 buttons.arrange.onclick = () => { arranging = !arranging; splitting = false; picked = null; selected = null; draw(); };
 window.addEventListener('resize', () => { if (state) draw(); });
