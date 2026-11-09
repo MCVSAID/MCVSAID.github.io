@@ -28,7 +28,7 @@ async function api(path, options = {}) {
 }
 // Which part of the main page is showing, and which sections belong to it.
 const PARTS = {
-  '/': ['#ready', '#recording-alerts', '#program', '#recipe-now', '#fleet', '#heat-plan'],
+  '/': ['#ready', '#recording-alerts', '#awake-alert', '#program', '#recipe-now', '#fleet', '#heat-plan'],
   '/recipe': ['#recipe'],
   '/cameras': ['#studio', '#bands', '#plug-switch', '#cameras'],
   '/colour': ['#colour'],
@@ -36,7 +36,7 @@ const PARTS = {
   // Sound in a page of its own (2026-10-25): the programme's sound and lip sync, and listening and voice calls.
   '/sound': ['#programme-sound', '#voice-shots'],
   // Power in a page of its own (2026-11-06): the plugs the chargers are on, and what each one charges.
-  '/power': ['#power'],
+  '/power': ['#power', '#keep-awake'],
   '/recordings': ['#recordings-tabs', '#pc-recordings', '#relay'],
   '/system': ['#system-tabs', '#devices-setup', '#manager-update', '#release', '#battery', '#silence', '#network', '#access', '#locations', '#transfer', '#ai-system', '#relay-system', '#decoding', '#face-blur-system'],
 };
@@ -706,6 +706,96 @@ async function powerSave(path, body, button) {
   catch (error) { result.textContent = error.message; if (button) button.disabled = false; return false; }
   finally { refresh(); }
 }
+// Keeping this Mac awake (keepawake.py), on the Power page: when (during shows, always, never), a few hours from now for
+// setting up, the screen too or not, and a schedule of times to stay awake, weekly or on one date.
+const awakePanel = document.querySelector('#keep-awake');
+let awakeAdding = false;                  // the Add a time form open: kept open across refreshes
+async function awakeSave(body, button) {
+  if (button) button.disabled = true;
+  try { await api('/api/keep-awake', { method: 'POST', body: JSON.stringify(body) }); result.textContent = ''; return true; }
+  catch (error) { result.textContent = error.message; if (button) button.disabled = false; return false; }
+  finally { refresh(); }
+}
+function awakeChoice(label, pressed, onclick) {
+  const b = node('button', label); b.type = 'button'; b.setAttribute('aria-pressed', String(pressed)); if (pressed) b.className = 'chosen'; b.onclick = onclick; return b;
+}
+function awakeWindowForm(k, window = null) {
+  const form = document.createElement('form'); form.className = 'awake-window';
+  const name = document.createElement('input'); name.placeholder = 'Friday show'; name.maxLength = 60; name.value = window?.name || ''; name.size = 18;
+  const start = document.createElement('input'); start.type = 'time'; start.required = true; start.value = window?.start || '18:00';
+  const end = document.createElement('input'); end.type = 'time'; end.required = true; end.value = window?.end || '23:30';
+  const once = document.createElement('input'); once.type = 'checkbox'; once.checked = Boolean(window?.date);
+  const date = document.createElement('input'); date.type = 'date'; date.value = window?.date || new Date().toLocaleDateString('en-CA');
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => { const box = document.createElement('input'); box.type = 'checkbox'; box.checked = window?.days ? window.days.includes(i) : i === 4; const l = node('label', ` ${d} `); l.prepend(box); return [box, l]; });
+  const weekly = node('span', ''); for (const [, l] of days) weekly.append(l);
+  const onDate = node('span', ''); onDate.append(date);
+  const show = () => { weekly.hidden = once.checked; onDate.hidden = !once.checked; };
+  once.onchange = show; show();
+  const label = (text, input) => { const l = node('label', text + ' '); l.append(input); return l; };
+  const onceLabel = node('label', ' Once, on a date'); onceLabel.prepend(once);
+  const save = node('button', window ? 'Save' : 'Add'), cancel = node('button', 'Cancel'); cancel.type = 'button';
+  cancel.onclick = () => { awakeAdding = false; refresh(); };
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const body = { name: name.value.trim(), start: start.value, end: end.value, ...(window ? { id: window.id } : {}) };
+    if (once.checked) body.date = date.value; else body.days = days.map(([box], i) => box.checked ? i : -1).filter(i => i >= 0);
+    if (await awakeSave({ window: body }, save)) awakeAdding = false;
+  };
+  form.append(label('Name', name), ' ', label('From', start), ' ', label('to', end), node('br', ''), onceLabel, ' ', weekly, onDate, node('br', ''), save, ' ', cancel,
+              node('small', ' An end before the start runs past midnight. Times are this Mac’s clock.'));
+  return form;
+}
+function drawKeepAwake(k) {
+  const panel = awakePanel;
+  panel.replaceChildren(node('h2', 'Keep this Mac awake'));
+  if (!k.available) { panel.append(node('p', 'Only on a Mac: this computer is not one, so it sleeps as its own settings say.')); return; }
+  const state = node('p', `${k.awake ? 'Awake: kept awake now.' : 'Not kept awake now.'} ${k.why}.`);
+  state.className = k.awake ? 'awake-on' : '';
+  panel.append(state);
+  if (k.problem) { const p = node('p', k.problem); p.className = 'recording-warning'; panel.append(p); }
+  for (const w of k.warnings) { const p = node('p', w); p.className = 'recording-warning'; panel.append(p); }
+  const modes = node('p', 'Keep it awake: ');
+  for (const [mode, words] of [['show', 'During shows and scheduled times'], ['always', 'Always, while the manager runs'], ['off', 'Never']])
+    modes.append(awakeChoice(words, k.mode === mode, () => awakeSave({ mode })), ' ');
+  panel.append(modes);
+  if (k.mode === 'show') {
+    const after = document.createElement('input'); after.type = 'number'; after.min = 0; after.max = 240; after.value = k.after_minutes; after.size = 4;
+    const set = node('button', 'Set'); set.onclick = () => awakeSave({ after_minutes: Number(after.value) }, set);
+    const line = node('p', 'A show is live while OBS records or streams, or a camera streams or records. Stay awake for '); line.append(after, ' minutes after, between sets ', set);
+    panel.append(line);
+    const hours = node('p', k.until_words ? `Kept awake until ${k.until_words}. ` : 'Setting up? Keep it awake for the next ');
+    if (k.until_words) hours.append(awakeChoice('Stop that', false, () => awakeSave({ hours: 0 })));
+    else for (const h of k.hours) hours.append(awakeChoice(`${h} h`, false, () => awakeSave({ hours: h })), ' ');
+    panel.append(hours);
+    panel.append(node('h3', 'Schedule'));
+    panel.append(node('p', k.windows.length ? (k.next ? `Next: ${k.next.name}, from ${k.next.words}.` : 'Nothing more is coming up in the next week.') : 'No times yet. Add the times of your shows, so the Mac is awake for them even before anything is live.'));
+    if (k.windows.length) {
+      const list = node('ul', '');
+      for (const w of k.windows) {
+        const item = node('li', `${w.name ? w.name + ': ' : ''}${w.words}${w.running ? ' (now)' : ''}${w.past ? ' (past)' : ''} `);
+        const remove = node('button', 'Remove'); remove.onclick = async () => { if (await concert.sure(`Remove ${w.name || w.words} from the schedule?`, { ok: 'Remove', danger: true })) awakeSave({ remove: w.id }); };
+        item.append(remove); list.append(item);
+      }
+      panel.append(list);
+    }
+    if (awakeAdding) panel.append(awakeWindowForm(k));
+    else if (k.windows.length < k.most_windows) { const add = node('button', 'Add a time'); add.onclick = () => { awakeAdding = true; drawKeepAwake(k); }; panel.append(add); }
+  }
+  const display = document.createElement('input'); display.type = 'checkbox'; display.checked = k.display;
+  display.onchange = () => awakeSave({ display: display.checked });
+  const dl = node('label', ' Keep the screen on too, not only the computer'); dl.prepend(display);
+  const dp = node('p', ''); dp.append(dl); panel.append(dp);
+  panel.append(node('small', 'This uses macOS’s own caffeinate while it is wanted, and stops it after. It ends by itself if the manager quits, so the Mac is never left stuck awake. Nothing in the Mac’s settings is changed.'));
+}
+// On the Show page, only when it matters: the show is live and the Mac is not kept awake, or something can still sleep it.
+function drawAwakeAlert(k) {
+  const box = document.querySelector('#awake-alert');
+  const live = k.live.length > 0;
+  const lines = !k.available ? [] : [...(live && !k.awake ? [`The show is live (${k.live.join(', ')}), but this Mac is not being kept awake (${k.mode === 'off' ? 'Keep awake is switched off' : k.problem || 'starting'}): it may sleep mid-show.`] : []),
+                                        ...((live || k.awake) ? k.warnings.filter(w => !w.startsWith('Not being kept awake')) : [])];
+  box.replaceChildren(...lines.map(text => { const p = node('p', text); p.className = 'recording-warning'; return p; }));
+  if (lines.length) { const more = document.createElement('a'); more.href = '/power'; more.textContent = 'Keep awake settings…'; box.append(more); }
+}
 // The Power page: each plug, what is on its charger and where those are now; for an administrator, the plugs' settings,
 // which gimbals and coolers each charges, and the one login they are all reached with.
 function drawPower(power, operator) {
@@ -833,7 +923,7 @@ function autoSwitches(auto, camera, cameras) {
 async function refresh() {
   try {
     const answer = await api('/api/cameras'); window.concert.feed(answer);
-    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, power, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically, auto } = answer;
+    const { cameras: paired, camera_capacity = 5, release, app_auto_update, battery_protect, phone_silence, power, keep_awake, sync, show_minutes, director, manager_version, away = false, ready, clocks_set_automatically, auto } = answer;
     studioSummary = answer.creator || null;          // Creator Studio's framings, for each card's What it shows (shows.js)
     // The cameras in use at this location; those set aside are left out of everything but their own short list.
     const cameras = paired.filter(c => c.in_use !== false), aside = paired.filter(c => c.in_use === false);
@@ -1594,6 +1684,9 @@ async function refresh() {
     // charger, switched from here and nowhere else. Set up by an administrator; switched by operators too, here and
     // from the Cameras page once a plug is set up.
     if (power && !powerDirty) drawPower(power, operator);          // not under something typed or ticked and not yet saved
+    // This Mac kept awake through a show (keepawake.py): on the Power page, and a word on the Show page when it matters.
+    if (keep_awake && !editing(awakePanel) && !awakeAdding) drawKeepAwake(keep_awake);   // not under a time being added
+    if (keep_awake) drawAwakeAlert(keep_awake);
     if (power?.plugs.some(p => p.configured)) drawPlugSwitches(power); else document.querySelector('#plug-switch').hidden = true;
     // Which app version the manager offers, and whether cameras take it by themselves.
     const panel = document.querySelector('#release');

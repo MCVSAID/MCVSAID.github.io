@@ -306,3 +306,5 @@ details.recipe-more[open] { display:block; width:100%; } details.recipe-more[ope
 #plug-switch .plug-row p { margin: .2rem 0; }
 #power article.plug { margin-bottom: 1rem; }
 #power details { margin: .8rem 0; }
+.awake-on { color:#8fe3a1; }
+#keep-awake button.chosen { outline:2px solid #5fb4ee; font-weight:600; } #keep-awake .awake-window label { white-space:nowrap; } #keep-awake .awake-window { margin:8px 0; line-height:2.2; }

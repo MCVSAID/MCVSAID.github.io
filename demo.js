@@ -1219,6 +1219,7 @@
     fresh.cameras.forEach(c => { const was = liveCams.find(x => x.id === c.id); if (was) c.telemetry = was.telemetry; });
     fresh.cameras.forEach(c => { const kept = S.targets?.[body.mode]?.[c.id]; if (c.gimbal?.targets && kept) c.gimbal.targets = copy(kept); });
     fresh.power = cams().power;
+    if (cams().keep_awake) fresh.keep_awake = cams().keep_awake;
     if (cams().auto) fresh.auto = cams().auto;               // tracking and the zoom stay as switched, whatever the kind of event
     S.answers['/api/cameras'] = fresh;
     const said = kind['/api/scene-chat'];
@@ -1407,6 +1408,7 @@
       Object.assign(plug, { on: body.on, checked: now() }); save(); return answer(cams().power);
     }
     if (path === '/api/power/plug' || path === '/api/power/login') { note('This is a demo: the plugs’ settings stay as they are, and no login is kept.'); return answer(cams().power); }
+    if (path === '/api/keep-awake') { note('This is a demo: keeping the Mac awake is only shown, and the schedule stays as it is.'); return answer(cams().keep_awake || {}); }
     if (path === '/api/director') return directorPost(body);
     if (path === '/api/event-mode') return kindPost(body);
     if (path === '/api/scene-chat') return chatPost(body);
