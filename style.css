@@ -133,7 +133,8 @@ footer a { color: var(--muted); }
 .hero + .prose-section { border-top: 0; }
 .hero:has(+ .prose-section) { padding-bottom: 8px; }
 
-/* The name in full: beside the brand on wide screens, and above the landing page's heading */
-.brand span { font-weight: 500; letter-spacing: 0; color: var(--muted); font-size: 14px; margin-left: 8px; }
-@media (max-width: 980px) { .brand span { display: none; } }
+/* The name in full: on a line of its own under MCVSAID in the header, and above the landing page's heading */
+.brand { display: flex; flex-direction: column; line-height: 1.05; }
+.brand span { font-weight: 500; letter-spacing: .01em; color: var(--muted); font-size: 12px; margin-top: 3px; white-space: nowrap; }
+@media (max-width: 380px) { .brand span { font-size: 10.5px; } }
 .eyebrow { font-size: 14px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
