@@ -134,7 +134,16 @@ footer a { color: var(--muted); }
 .hero:has(+ .prose-section) { padding-bottom: 8px; }
 
 /* The name in full: on a line of its own under MCVSAID in the header, and above the landing page's heading */
-.brand { display: flex; flex-direction: column; line-height: 1.05; }
-.brand span { font-weight: 500; letter-spacing: .01em; color: var(--muted); font-size: 12px; margin-top: 3px; white-space: nowrap; }
-@media (max-width: 380px) { .brand span { font-size: 10.5px; } }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .mark { width: 34px; height: 34px; flex: none; fill: none; stroke: var(--accent); stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; }
+.brand .name { display: flex; flex-direction: column; line-height: 1.05; }
+.brand .name span { font-weight: 500; letter-spacing: .01em; color: var(--muted); font-size: 12px; margin-top: 3px; white-space: nowrap; }
+header.top .button { white-space: nowrap; }
+@media (max-width: 440px) {
+  .brand { gap: 7px; } .brand .mark { width: 26px; height: 26px; }
+  .brand .name span { font-size: 10.5px; }
+  header.top .button { padding: 9px 13px; font-size: 14px; }
+}
+@media (max-width: 350px) { .brand .name span { display: none; } }
 .eyebrow { font-size: 14px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
