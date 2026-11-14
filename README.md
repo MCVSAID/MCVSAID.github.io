@@ -1,22 +1,7 @@
-# MCVSAID demo
+# mcvsaid.com
 
-An interactive demonstration of the MCVSAID dashboard, published at **https://demo.mcvsaid.com**, linked from
-the MCVSAID site at **https://mcvsaid.com**.
+The MCVSAID welcome site, served by GitHub Pages at https://mcvsaid.com. The clickable demo is at
+https://demo.mcvsaid.com.
 
-It is the real dashboard, running entirely in your browser with **simulated cameras**: six made-up cameras with drawn
-pictures, made-up performers, and nothing connected. Nothing you press leaves your browser, and what you change lasts
-only until you close the tab (or press *Start over*). The programme monitor shows drawn stills, not video.
-
-Choose *Cooking* as the kind of event (under the name in the side bar) to see the **Recipe** page: a recipe part-way
-through its preparation, its steps to move through and edit, and *Try a phrase*, which stands in for what the cook
-says ("let's see that recipe", "right now we're on step two", an ingredient named); the programme monitor shows what
-would go on screen. *Prep for the show* makes its long steps concise for the host to call out (by rules: the demo has
-no AI model), checks which camera covers each step and lists what the host can say for each.
-
-MCVSAID turns Android phones into managed cameras for live events, streamed to OBS on one production computer, with a
-manager that keeps them in step and can choose the shots itself. It is in a private beta: see
-[mcvsaid.com](https://mcvsaid.com) and [MCVSAID/mcvsaid-app](https://github.com/MCVSAID/mcvsaid-app), or write to
-beta@mcvsaid.com to join it.
-
-The files here are built automatically from the dashboard; they are not edited by hand. MCVSAID is proprietary (all
-rights reserved); this demo is published so that people can try the dashboard.
+These files are built automatically from the project's website folder; they are not edited by hand. MCVSAID is
+proprietary (all rights reserved). Contact: hello@mcvsaid.com.
