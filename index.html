@@ -38,7 +38,9 @@
     <p class="lede">The best camera for the money is an Android phone: a large sensor, sharp 4K and a real zoom lens,
       for a few hundred dollars used. MCVSAID turns them into a synced, self-healing camera rig for OBS. One Mac or Linux
       computer runs it. Cut the show by hand, or let a vision model on that same computer choose the shots, and steer
-      it in plain words as the show goes. No cloud, no subscription, and your footage goes only where you stream it.</p>
+      it in plain words as the show goes. No cloud, no subscription, and your footage goes only where you stream it.
+      MCVSAID goes online by itself only to check for updates, from GitHub; otherwise only to fetch what you ask for,
+      such as an AI model or a recipe page.</p>
     <div class="actions">
       <a class="button" href="https://demo.mcvsaid.com/">Try the demo</a>
       <a class="button ghost" href="#beta">Join the private beta</a>
@@ -58,8 +60,8 @@
       <div class="point"><b>Flagship cameras, used prices</b><span>A Galaxy S23 with a 3x zoom lens costs about $280 used: a fraction of a 4K PTZ camera.</span></div>
       <div class="point"><b>Mount the phones once</b><span>Set them up, match their colour, update and fix them from a browser.</span></div>
       <div class="point"><b>A director that looks first</b><span>The programme runs a few seconds behind, so every cut is seen before it airs.</span></div>
-      <div class="point"><b>Your show, your computer</b><span>The model runs locally. Nothing is sent to the project or a cloud service.</span></div>
-      <div class="point"><b>The AI's cut is a starting point</b><span>Every show comes with each camera's own file and the edit.</span></div>
+      <div class="point"><b>Your show, your computer</b><span>The footage and the model stay on it, and nothing is sent to the project. Updates come from GitHub.</span></div>
+      <div class="point"><b>The AI's cut is a starting point</b><span>Keep each camera's own file and the edit, and re-cut the show yourself.</span></div>
       <div class="point"><b>Everyone logs in as themselves</b><span>Each person has a role, and the audit log names who changed what.</span></div>
     </div>
   </div>
@@ -68,14 +70,15 @@
 <section id="hardware">
   <div class="wrap">
     <h2>More camera for the money</h2>
-    <p class="sub">A flagship Android phone from the last few years has a bigger image sensor than most 4K PTZ cameras,
+    <p class="sub">A flagship Android phone from the last few years has an image sensor about the size of a premium PTZ camera's and bigger than most 4K PTZ cameras',
+     
       shoots sharp 4K, and carries its own zoom lenses, for a few hundred dollars used. MCVSAID runs on any of them, so
       you choose the cameras that fit the show and the budget, and change them as better ones get cheaper.</p>
     <div class="phones">
       <div class="phone">
         <div class="phone-head"><b>Samsung Galaxy S23</b><span class="tag ok">Tested</span></div>
         <p class="price">about $280 used</p>
-        <ul><li>50 MP main camera</li><li><b>3x zoom lens</b>, 10 MP, opened by the app (tested)</li><li>12 MP ultrawide · 4K</li></ul>
+        <ul><li>50 MP main camera, 1/1.56" sensor</li><li><b>3x zoom lens</b>, 10 MP, opened by the app (tested)</li><li>12 MP ultrawide · 4K</li></ul>
       </div>
       <div class="phone">
         <div class="phone-head"><b>Samsung Galaxy S23 Ultra</b><span class="tag">Not yet tried</span></div>
@@ -97,13 +100,13 @@
     <div class="compare">
       <div>
         <h3>Aim it like a PTZ camera</h3>
-        <p>Put the phone on a Hohem iSteady X3 (about $70–130) or MT3 (about $200–330) and it becomes a camera you pan and
+        <p>Put the phone on a Hohem iSteady X3 (about $100–130; the cheaper X3 SE is a different model, not yet tried) or MT3 (from about $330) and it becomes a camera you pan and
           tilt from the dashboard, a tablet or an Xbox controller, that follows a face by itself, and that goes to a
           spot you saved when the host says "let's see the ___." Zoom comes from the phone's own lenses and its large sensor.
           <span class="tag">Experimental</span></p>
       </div>
       <div class="sums">
-        <div><span>Galaxy S23 + Hohem X3</span><b>about $350</b></div>
+        <div><span>Galaxy S23 + Hohem iSteady X3, 1/1.56" sensor</span><b>about $400</b></div>
         <div><span>A 4K PTZ camera with 12x zoom, 1/2.5"–1/2.8" sensor</span><b>about $1,400–2,000</b></div>
         <div><span>A 4K AI-tracking PTZ camera, 1/1.5" sensor, 5x zoom</span><b>about $1,200</b></div>
       </div>
@@ -205,8 +208,10 @@
       <div class="feature">
         <div class="text">
           <h3>Recordings ready for the edit</h3>
-          <p>Every programme recording comes with a file per camera, the cuts as an EDL for Resolve, Premiere or Final
-            Cut, and each camera's LUT. Recordings made on the phones are copied over and verified after the show.</p>
+          <p>Switch on camera files and every programme recording comes with a file per camera, kept on the computer from
+            the streams as they arrive, plus the cuts as an EDL for Resolve, Premiere or Final Cut and each camera's LUT.
+            Phones can also record a sharper copy of their own, copied over and verified after the show, but recording
+            while streaming runs most phones too hot without a cooler: try it on your phones first.</p>
         </div>
         <div class="shot"><img src="screenshots/09-recordings-pc.png" alt="Recordings on the production computer" loading="lazy"></div>
       </div>
@@ -269,9 +274,10 @@
       <li><b>Dedicated phones.</b> Camera phones must be factory-reset and used only as cameras: the app becomes each phone's device owner.</li>
       <li><b>Android and OBS.</b> Cameras are Android only, and output goes through OBS.</li>
       <li><b>A few seconds of delay.</b> The programme runs behind real life by design, so the director sees each moment first.</li>
-      <li><b>Heat.</b> Without a cooler, phone heat still limits recording on the phone during a long show.</li>
+      <li><b>Heat.</b> Recording on the phones while they stream ran them too hot to use in our tests without a cooler.
+        Keep each camera's file on the computer instead, or try a cooler and test on your own phones first.</li>
       <li><b>Experimental parts.</b> Face blur can miss faces. Gimbal and cooler control use commands worked out from the
-        makers' own apps, and only the Hohem X3 and MT3 and the Black Shark MagCooler 5 Pro have been tried.</li>
+        makers' own apps, and only the Hohem iSteady X3 and MT3 and the Black Shark MagCooler 5 Pro have been tried.</li>
     </ul>
     <p style="margin-top:12px"><a href="why/">Why MCVSAID: what it does that others don't, and how it compares →</a></p>
   </div>
@@ -309,7 +315,7 @@
 
 <footer>
   <div class="wrap">
-    <span>© MCVSAID, the MultiCam Video Stream AI Director. Private beta, closed source. All rights reserved.</span>
+    <span>© MCVSAID, the MultiCam Video Stream AI Director. Private beta, closed source: GitHub has the documentation and signed app builds, not the source. All rights reserved.</span>
     <span><a href="https://demo.mcvsaid.com/">Demo</a> · <a href="why/">Why MCVSAID</a> · <a href="https://github.com/MCVSAID/mcvsaid-app">Page by page</a> ·
       <a href="https://github.com/MCVSAID">GitHub</a> · <a href="#security">Security</a> · <a href="mailto:hello@mcvsaid.com">hello@mcvsaid.com</a></span>
   </div>
