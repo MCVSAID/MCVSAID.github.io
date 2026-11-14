@@ -1,0 +1,8 @@
+/* Calibrate sync's flash page (syncflash.html). */
+  html, body { margin: 0; height: 100%; background: #000; color: #ccc; font: 18px/1.4 system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; text-align: center; touch-action: manipulation; }
+  body.flash { background: #fff; }
+  body.flash #words { visibility: hidden; }
+  #words { max-width: 30em; padding: 1em; }
+  button { font: inherit; font-size: 1.4em; padding: 0.6em 1.4em; border-radius: 0.4em; border: 0; background: #2b6fd6; color: #fff; }
+  small { display: block; margin-top: 1em; color: #888; }

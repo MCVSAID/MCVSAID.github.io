@@ -1,0 +1,265 @@
+'use strict';
+// Voice shot calls (voicecalls.py), on the Sound page: the host says a camera's shot aloud ("cut to the overhead",
+// "show the stove", "wide shot") and the director puts it on air, holding it as it does a camera chosen by hand. The
+// switches (listening, and shot calls for this kind of event), what each camera answers to with phrases of its own, how
+// sure a call must be, what was heard and what it did, and a box to try a phrase. Each camera's card says what it
+// answers to through window.voiceCard. Heard by the same listening as Cooking's spoken cues (speech.py).
+// Uses app.js's api(), node(), editing(), part, role and csrf.
+// What the listening hears, chosen from the computer's own sound inputs (the manager lists them: speech.look_for_inputs),
+// for the voice panel here and the Recipe page: the programme's sound, or a microphone. A saved one not connected now
+// stays in the list, said to be missing. `pick(name)` is called with the choice ('' for the programme).
+window.listenTo = (v, pick, disabled) => {
+  const select = document.createElement('select'); select.className = 'listen-to'; select.setAttribute('aria-label', 'What to listen to'); select.disabled = !!disabled;
+  const programme = v.programme_input || '';
+  const option = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; o.selected = value === (v.device || ''); select.append(o); };
+  option('', `The programme’s sound${programme ? ` (${programme}, what OBS monitors)` : ''}: as far behind as the programme`);
+  const inputs = (v.inputs || []).filter(name => name !== programme);
+  for (const name of inputs) option(name, name);
+  // A camera's own microphone, live from the camera relay: heard as the host speaks near it, not behind with the programme.
+  const cameras = v.cameras || [];
+  if (cameras.length) {
+    const group = document.createElement('optgroup'); group.label = 'A camera’s own microphone (live, from its stream)';
+    for (const c of cameras) { const o = document.createElement('option'); o.value = `camera:${c.id}`; o.textContent = `${c.name}’s microphone`; o.selected = o.value === v.device; group.append(o); }
+    select.append(group);
+  }
+  if (v.device && !inputs.includes(v.device) && v.device !== programme && !(v.device.startsWith('camera:') && cameras.some(c => `camera:${c.id}` === v.device)))
+    option(v.device, v.device.startsWith('camera:') ? 'A camera’s microphone (needs the camera relay on)' : `${v.device} (not connected now)`);
+  if (v.device && v.device === programme) option(programme, `${programme} (the programme’s sound)`);
+  if (!v.inputs) { const o = document.createElement('option'); o.disabled = true; o.textContent = 'Looking for this computer’s microphones…'; select.append(o); }
+  select.onchange = () => pick(select.value);
+  return select;
+};
+
+(() => {
+  const panel = document.querySelector('#voice-shots');
+  if (!panel) return;
+  let state = null, drawnFrom = '', said = '', busy = false, fetchedAt = Date.now();
+  const clock = seconds => { const s = Math.max(0, Math.floor(seconds)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const modeName = id => window.concert?.mode?.modes?.find(m => m.id === id)?.short || id;
+
+  async function send(body, done) {
+    busy = true; said = 'Saving…'; paint(true);
+    try { state = await api('/api/voice', { method: 'POST', body: JSON.stringify(body) }); fetchedAt = Date.now(); said = done ?? 'Saved.'; }
+    catch (error) { said = error.message; }
+    finally { busy = false; paint(true); }
+  }
+  const button = (text, act, kind) => { const b = node('button', text); b.type = 'button'; b.disabled = busy; if (kind) b.className = kind; b.onclick = act; return b; };
+  const checkbox = (text, on, act, disabled) => {
+    const label = node('label', ''), tick = document.createElement('input'); tick.type = 'checkbox'; tick.checked = !!on; tick.disabled = busy || !!disabled; tick.onchange = () => act(tick.checked);
+    label.append(tick, node('span', ` ${text}`)); return label;
+  };
+  const quoted = list => list.map(p => `“${p}”`).join(', ');
+
+  function switches(v, s) {
+    const box = node('div', ''); box.className = 'recipe-cues';
+    box.append(checkbox(v.cooking ? 'Listen to the host (the same switch as the Recipe page’s spoken cues)' : 'Listen to the host', v.enabled, on => send({ listen: on }), !v.allowed));
+    box.append(checkbox(`Cut to a camera when its shot is called, in ${modeName(s.mode)}`, s.on, on => send({ on })));
+    const why = node('small', `${modeName(s.mode)}: ${s.default ? 'on' : 'off'} unless switched. On by default in Cooking and Studio, where one host talks to their own cameras; off in live music, worship and theatre (sung words, a congregation and scripted lines would call cameras by mistake) and in a podcast or panel (people call each other by the names cameras are given).`);
+    box.append(why);
+    if (s.set) box.append(button(`Back to ${modeName(s.mode)}’s default (${s.default ? 'on' : 'off'})`, () => send({ on: null })));
+    return box;
+  }
+
+  function hearing(v) {
+    const box = node('div', '');
+    if (!v.enabled) return box;
+    const where = node('p', ''); where.className = 'recipe-load-row';
+    const device = window.listenTo(v, name => send({ device: name }, name ? `Listening to ${name}.` : 'Listening to the programme’s sound.'), busy);
+    const model = document.createElement('select'); model.setAttribute('aria-label', 'Speech model');
+    for (const [name, size] of v.models) { const o = node('option', `Whisper ${name} (${size})${name === 'small.en' ? ', the default' : ', for a smaller computer'}`); o.value = name; o.selected = name === v.model; model.append(o); }
+    model.onchange = () => send({ model: model.value });
+    where.append(node('span', 'Listen to '), device, model);
+    const status = node('p', '');
+    if (!v.listening) status.append(node('span', 'Not listening: nothing to act on in this kind of event while shot calls are off.'));
+    else if (v.problem || !v.runtime || !v.installed) { status.textContent = `Not listening yet: ${v.problem || (!v.runtime ? 'speech recognition is not installed' : 'the speech model is not downloaded')}. Set it up in AI assistance on the Director page.`; status.className = 'recording-warning'; }
+    else status.textContent = `Listening to ${v.source}.`;
+    box.append(where, node('small', 'The microphone the host speaks into hears them as they speak; the programme’s sound is what OBS sends to BlackHole, behind by as much as the programme is.'), status);
+    // Heard from the programme, a voice call is acted on as late as the programme runs behind: say so, loudly.
+    if (!v.device && v.programme_behind_ms > 1000) {
+      const late = node('p', `Listening to the programme’s sound, which runs ${(v.programme_behind_ms / 1000).toFixed(1)} s behind you (feed alignment and its look-ahead): every voice call is acted on that much late. Name the microphone you speak into above to have calls acted on as you say them.`);
+      late.className = 'recording-warning'; box.append(late);
+    }
+    return box;
+  }
+
+  function cameras(s) {
+    const box = node('div', ''); box.className = 'voice-cameras';
+    box.append(node('h4', 'What each camera answers to'));
+    if (!s.cameras.length) { box.append(node('small', 'No cameras are paired at this location yet.')); return box; }
+    const list = document.createElement('ul');
+    for (const camera of s.cameras) {
+      const li = document.createElement('li');
+      const own = camera.phrases.filter(p => p.source === 'own').map(p => p.phrase), given = camera.phrases.filter(p => p.source !== 'own');
+      const line = node('div', ''); line.append(node('strong', camera.name), node('span', ' · '));
+      given.forEach((p, n) => { const chip = node('span', p.phrase); chip.className = p.shared ? 'voice-phrase shared' : 'voice-phrase'; if (p.shared) chip.title = 'Another camera answers to this too: it is not acted on until one of them has a phrase of its own.'; line.append(chip, node('span', n < given.length - 1 ? ' ' : '')); });
+      const form = document.createElement('form'); form.className = 'recipe-load-row';
+      const input = document.createElement('input'); input.type = 'text'; input.size = 30; input.maxLength = 300; input.value = own.join(', '); input.placeholder = 'its own phrases, with commas: overhead, the bench'; input.setAttribute('aria-label', `${camera.name}: phrases of its own`);
+      const save = node('button', 'Save'); save.disabled = busy;
+      form.append(input, save);
+      form.onsubmit = event => { event.preventDefault(); send({ phrases: { [camera.id]: input.value.split(',').map(p => p.trim()).filter(Boolean) } }, `${camera.name} saved.`); };
+      li.append(line, form);
+      list.append(li);
+    }
+    box.append(list, node('small', 'From its name, its slot (“camera 2”) and what it is given to show on its card, and phrases of its own, which win over another camera’s. A phrase shown struck through is shared by two cameras and is not acted on.'));
+    return box;
+  }
+
+  // Voice zoom calls (voicezoom.py): a tighter or wider shot asked for aloud, by the host or a performer. Built-in
+  // phrases only where calls are on by default; this kind of event's own phrases everywhere, each zooming the camera on
+  // air or a named one.
+  const ACTION_WORDS = { tighter: 'Tighter (1.5×)', wider: 'Wider (1.5×)', close: 'Close-up (just past the telephoto)', normal: 'Back to normal (1×)',
+    find: 'Find me: a gimbal camera turns to whoever called (“I’m over here”)',
+    // Tracking and the zoom switched live (autoswitch.py): “the camera on air” here means every camera.
+    tracking_off: 'Tracking off (every camera, or the one chosen)', tracking_on: 'Tracking on (every camera, or the one chosen)',
+    zoom_off: 'Auto zoom off: holds where it is (every camera, or the one chosen)', zoom_on: 'Auto zoom on (every camera, or the one chosen)' };
+  let zoomDraft = null;
+  function zoomCalls(v, s) {
+    const z = v.zooms, box = node('div', ''); box.className = 'voice-cameras';
+    if (!z) return box;
+    box.append(node('h4', 'Zoom calls'));
+    box.append(checkbox(`Zoom when a tighter or wider shot is asked for, in ${modeName(z.mode)}`, z.on, on => send({ zoom_on: on })));
+    if (z.set) box.append(button(`Back to ${modeName(z.mode)}’s default (${z.default ? 'on' : 'off'})`, () => send({ zoom_on: null })));
+    box.append(node('small', z.built_in
+      ? `Built in: ${quoted(z.phrases.filter(p => p.source === 'built in').map(p => p.phrase))}, for the camera on air. Add your own below.`
+      : `${modeName(z.mode)} has no built-in zoom phrases (a lyric like “closer” would set them off): only the phrases below, so choose words nobody sings, such as “camera, close on me”.`));
+    // How quickly a called zoom glides: quick (0.6 s a step, 1 s to a close-up) or smooth (twice as long).
+    const QUICK = { tighter: 0.6, wider: 0.6, close: 1.0, normal: 1.0 }, SMOOTH = { tighter: 1.2, wider: 1.2, close: 2.0, normal: 2.0 };
+    const speedLine = node('p', ''); speedLine.className = 'recipe-load-row';
+    const speed = document.createElement('select'); speed.setAttribute('aria-label', 'How quickly a called zoom glides'); speed.disabled = busy;
+    const nowSpeed = z.seconds && z.seconds.close >= 1.5 ? 'smooth' : 'quick';
+    for (const [value, text] of [['quick', 'quick: 0.6 s a step, 1 s to a close-up (the default)'], ['smooth', 'smooth: 1.2 s a step, 2 s to a close-up']]) { const o = node('option', text); o.value = value; o.selected = value === nowSpeed; speed.append(o); }
+    speed.onchange = () => send({ zoom_seconds: speed.value === 'smooth' ? SMOOTH : QUICK }, 'Saved.');
+    speedLine.append(node('span', 'A called zoom glides: '), speed);
+    box.append(speedLine);
+    const rows = zoomDraft || z.own.map(p => ({ ...p }));
+    const list = node('div', '');
+    rows.forEach((row, n) => {
+      const line = node('p', ''); line.className = 'recipe-load-row';
+      const text = document.createElement('input'); text.type = 'text'; text.maxLength = 40; text.size = 24; text.value = row.phrase; text.placeholder = 'camera, close on me'; text.setAttribute('aria-label', 'Zoom phrase');
+      text.oninput = () => { zoomDraft = rows; row.phrase = text.value; };
+      const action = document.createElement('select'); action.setAttribute('aria-label', 'What it does');
+      for (const [value, label] of Object.entries(ACTION_WORDS)) { const o = node('option', label); o.value = value; o.selected = value === row.action; action.append(o); }
+      action.onchange = () => { zoomDraft = rows; row.action = action.value; };
+      const camera = document.createElement('select'); camera.setAttribute('aria-label', 'Which camera');
+      for (const [value, label] of [['on_air', 'the camera on air'], ...s.cameras.map(c => [c.id, c.name])]) { const o = node('option', label); o.value = value; o.selected = value === (row.camera || 'on_air'); camera.append(o); }
+      camera.onchange = () => { zoomDraft = rows; row.camera = camera.value; };
+      line.append(text, action, camera, button('✕', () => { zoomDraft = rows.filter((_, m) => m !== n); paint(true); }));
+      list.append(line);
+    });
+    box.append(list);
+    const actions = node('p', ''); actions.className = 'recipe-load-row';
+    if (rows.length < 12) actions.append(button('Add a phrase', () => { zoomDraft = [...rows, { phrase: '', action: 'close', camera: 'on_air' }]; paint(true); }));
+    if (zoomDraft) actions.append(button('Save zoom phrases', () => { const keep = rows.filter(r => r.phrase.trim()); zoomDraft = null; send({ zoom_phrases: keep }, 'Zoom phrases saved.'); }));
+    // The quick phrase spotter (spotter.py): your own phrases acted on as they end, beside Whisper.
+    const sp = v.spotter;
+    if (sp) {
+      const line = node('p', ''); line.className = 'recipe-load-row';
+      line.append(checkbox('Quick phrase spotter for your own phrases', sp.enabled, on => send({ spotter: on })));
+      line.append(node('small', !sp.enabled ? ' Off: Whisper alone hears every phrase.' : !sp.own ? ' Nothing of your own to listen for yet: add zoom phrases here, or a camera\u2019s own phrases above.' : !sp.runtime || !sp.installed ? ' Not set up: its two steps are in AI assistance on the Director page.'
+        : sp.problem ? ` Not working: ${sp.problem}. Whisper alone meanwhile.` : sp.on ? ` Listening for ${quoted(sp.phrases)}: acted on as each ends, a fifth of a second or so.` : ' Nothing of your own to listen for yet.'));
+      box.append(line);
+      // Spotted on the phone itself (app 0.9.41): only a phone with its cooler connected, pausing itself when warm; the
+      // spotter here goes on hearing the same sound from the relay meanwhile.
+      const phones = v.phone_spotters || [];
+      if (phones.length && sp.own) {
+        const words = { listening: 'listening on the phone', paused_warm: 'paused: the phone is warm (heard from the relay meanwhile)', paused_no_cooler: 'paused: its cooler is not connected (heard from the relay meanwhile)',
+          downloading: 'fetching its model from this computer', loading: 'loading its model', no_model: 'waiting for its model (set up the spotter here first)', off: 'off' };
+        for (const phone of phones) {
+          const row = node('p', ''); row.className = 'recipe-load-row';
+          row.append(checkbox(`Spot them on ${phone.name} itself`, phone.on, on => send({ phone_spotter: { [phone.id]: on } }), !phone.cooled && !phone.on));
+          const s = phone.spotter || {};
+          row.append(node('small', !phone.cooled && !phone.on ? ' Only a phone with its cooler connected.' : phone.on ? ` ${s.state === 'failed' ? `not working: ${s.problem}` : words[s.state] || s.state || 'starting'}${s.spotted ? ` · ${s.spotted} spotted` : ''}` : ' A quarter to a third of a second sooner than from the relay.'));
+          box.append(row);
+        }
+      }
+    }
+    box.append(actions, node('small', 'Called like a shot (“give me a close up”, “camera, zoom in”) or said alone (“Close up!”); with a shot call (“cut to the stove, close up”) it zooms the camera just called. A phone with app 0.9.38 glides there, handing over to its telephoto on the way; an older one changes at once. The director holds a camera on air while it zooms.'));
+    return box;
+  }
+
+  // Saved gimbal targets (gimbaltargets.py): saved on a gimbal camera's card; called aloud ("show the pot") the camera
+  // turns and zooms there, and the way back ("back to me") puts it back as it was.
+  let backDraft = null;
+  function targetCalls(v) {
+    const t = v.targets, box = node('div', ''); box.className = 'voice-cameras';
+    if (!t) return box;
+    box.append(node('h4', 'Saved gimbal targets'));
+    if (!t.cameras.length) { box.append(node('small', `None saved for ${modeName(t.mode)}. On a gimbal camera’s card (Cameras page, Gimbal): aim it at what it should show on cue, such as the pot, then Save as target.`)); return box; }
+    box.append(checkbox(`Turn a gimbal camera to a saved target when it is called, in ${modeName(t.mode)}`, t.switched_on, on => send({ targets_on: on })));
+    const list = node('ul', '');
+    for (const camera of t.cameras) {
+      for (const target of camera.targets) {
+        const item = node('li', `${camera.name}: ${target.name} · heard as ${quoted(target.phrases.map(p => p.phrase))}`);
+        if (target.phrases.some(p => p.shared)) { item.append(node('span', ' · a phrase another target has too: neither acts on it')); item.className = 'recording-warning'; }
+        list.append(item);
+      }
+    }
+    box.append(list);
+    const row = node('p', ''); row.className = 'recipe-load-row';
+    const back = document.createElement('input'); back.type = 'text'; back.size = 40; back.maxLength = 250; back.value = backDraft ?? t.back.join(', ');
+    back.setAttribute('aria-label', 'The way back, phrases with commas'); back.oninput = () => { backDraft = back.value; };
+    row.append(node('span', 'The way back: '), back, ' ',
+      button('Save', () => { const kept = back.value.split(',').map(p => p.trim()).filter(Boolean); backDraft = null; send({ back_phrases: kept }, 'The way back saved.'); }));
+    if (t.back_own) row.append(' ', button('Built-in ones', () => { backDraft = null; send({ back_phrases: [] }, 'The built-in ways back again.'); }));
+    box.append(row, node('small', `Called like a shot (“show the pot”, “let’s see the board”) or said alone (“The pot!”). The camera stops following, turns and zooms to the target, and goes on air once it is there where shot calls are on. The way back returns every camera on a target to where it pointed, its zoom and following, as before its first target.${t.away.length ? ` On a target now: ${t.away.length}.` : ''}`));
+    return box;
+  }
+
+  function heardBox(v) {
+    const heard = node('div', ''); heard.className = 'recipe-heard'; heard.append(node('h4', 'Heard'));
+    if (!v.heard.length) { heard.append(node('small', v.listening ? 'Nothing yet.' : 'Nothing: not listening. Try a phrase below to see what it would do.')); return heard; }
+    const list = document.createElement('ul');
+    for (const entry of v.heard) {
+      const li = document.createElement('li'); li.className = entry.did ? 'did' : 'ignored';
+      const ago = entry.ago + (Date.now() - fetchedAt) / 1000;
+      li.append(node('q', entry.text), node('small', ` ${entry.typed ? 'typed' : entry.spotted ? 'spotted as it ended (quick phrase spotter)' : `${Math.round(entry.sure * 100)}% sure`}${entry.early ? ', while still speaking' : ''}${entry.took != null ? `, understood in ${entry.took.toFixed(1)} s` : ''}, ${clock(ago)} ago`), node('br', ''), node('span', entry.did ? `→ ${entry.did}` : `→ nothing: ${entry.why}`));
+      list.append(li);
+    }
+    heard.append(list);
+    return heard;
+  }
+
+  function paint(all) {
+    if (!state || !state.shots) return;
+    const v = state, s = v.shots;
+    const now = JSON.stringify([{ ...v, heard: v.heard.map(e => [e.at, e.text, e.did, e.why]), heard_at: null }, said, busy, Math.floor(Date.now() / 10000)]);
+    if (!all && (editing(panel) || now === drawnFrom)) return;
+    drawnFrom = now;
+    const intro = node('p', 'Say a camera’s shot aloud and the director puts it on air at once, then holds it as it does a camera chosen by hand' +
+      ` (${Math.round(s.hold_seconds)} s, Hold after a person chooses, under Director settings), so the automatic choosing does not cut straight away: “cut to the overhead”, “show the stove”, “back to the wide”, or just “Wide shot!”. A name in passing (“the stove is hot”), a question or “don’t cut to the stove” does nothing. Speech is recognised on this computer: nothing heard is sent anywhere, and what was heard is kept here only, for the last few phrases, never saved.`);
+    const parts = [node('h2', 'Voice shot calls'), intro];
+    if (!v.allowed) { const need = node('p', 'Listening is part of the Standard and Plus AI levels: choose one in AI assistance on the Director page. You can still try a phrase below.'); need.className = 'recording-warning'; parts.push(need); }
+    const sure = node('p', ''); sure.className = 'recipe-load-row';
+    const pick = document.createElement('select'); pick.setAttribute('aria-label', 'How sure a call must be');
+    for (const [value, text] of [[0.6, 'a little sure (60%)'], [0.7, 'fairly sure (70%), the default'], [0.8, 'quite sure (80%)'], [0.9, 'very sure (90%)']]) { const o = node('option', text); o.value = value; o.selected = Math.abs(value - s.min_confidence) < 0.01; pick.append(o); }
+    pick.disabled = busy; pick.onchange = () => send({ min_confidence: Number(pick.value) });
+    sure.append(node('span', 'Act on a call when the recogniser is '), pick);
+    const try_ = document.createElement('form'); try_.className = 'recipe-load-row';
+    const phrase = document.createElement('input'); phrase.type = 'text'; phrase.maxLength = 240; phrase.size = 34; phrase.placeholder = 'Cut to the overhead'; phrase.setAttribute('aria-label', 'A phrase, as if the host said it');
+    const act = node('button', 'Act on it'); act.disabled = busy;
+    try_.append(node('span', 'Try a phrase, as if the host said it: '), phrase, act);
+    try_.onsubmit = event => { event.preventDefault(); const text = phrase.value.trim(); if (!text) return; phrase.value = ''; send({ say: text }, ''); };
+    const message = node('p', said); message.setAttribute('aria-live', 'polite'); if (/not |need|fail|error|refus|must|at most/i.test(said)) message.className = 'recording-warning';
+    parts.push(switches(v, s), hearing(v), sure, cameras(s), zoomCalls(v, s), targetCalls(v), heardBox(v), try_, node('small', 'It acts on the show as a call would: the camera goes on air.'), message);
+    panel.replaceChildren(...parts);
+  }
+
+  // Each camera's card: what it answers to, in "What it shows".
+  window.voiceCard = (camera, shots) => {
+    const mine = state?.shots?.cameras.find(c => c.id === camera.id);
+    if (!mine || !state.shots.on) return;
+    const line = node('small', `Called aloud: ${quoted(mine.phrases.filter(p => !p.shared).slice(0, 6).map(p => p.phrase))}. `);
+    const go = document.createElement('a'); go.href = '/director'; go.textContent = 'Phrases of its own (Director)';
+    go.onclick = event => { if (event.metaKey || event.ctrlKey || event.shiftKey) return; event.preventDefault(); history.pushState(null, '', '/director'); window.concert.pick?.('/director'); };
+    line.append(go); line.className = 'card-setting'; shots.append(line);
+  };
+
+  async function refresh() {
+    const showing = typeof part !== 'undefined' && (part === '/sound' || part === '/cameras') && csrf;
+    panel.hidden = !(showing && part === '/sound');
+    if (!showing || busy) return;
+    try { state = await api('/api/voice'); fetchedAt = Date.now(); if (part === '/sound') paint(false); } catch (error) { said = error.message; }
+  }
+  document.addEventListener('event-mode', refresh);
+  setInterval(refresh, 3000); refresh();
+})();
