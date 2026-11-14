@@ -147,3 +147,23 @@ header.top .button { white-space: nowrap; }
 }
 @media (max-width: 350px) { .brand .name span { display: none; } }
 .eyebrow { font-size: 14px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+
+/* Camera hardware: phones, prices and the PTZ comparison */
+.phones { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.phone { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.phone-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.phone-head .tag { margin: 0; white-space: nowrap; }
+.tag.ok { background: var(--accent-soft); color: var(--accent); }
+.phone .price { font-size: 22px; font-weight: 750; margin: 6px 0 8px; color: var(--ink); }
+.phone ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 15px; }
+.phone li { margin: 0 0 4px; }
+.compare { display: grid; grid-template-columns: 1.2fr 1fr; gap: 32px; align-items: center; margin-top: 36px; }
+.compare h3 { margin: 0 0 8px; font-size: 21px; }
+.compare p { color: var(--muted); margin: 0; }
+.sums { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.sums div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 15px; color: var(--muted); }
+.sums div:last-child { border-bottom: 0; }
+.sums div:first-child { background: var(--accent-soft); color: var(--ink); }
+.sums b { white-space: nowrap; color: var(--ink); }
+.fine { color: var(--muted); font-size: 13px; margin: 20px 0 0; max-width: 860px; }
+@media (max-width: 820px) { .compare { grid-template-columns: 1fr; gap: 18px; } }
