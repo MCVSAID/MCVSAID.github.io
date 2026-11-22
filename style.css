@@ -176,3 +176,7 @@ header.top .button { white-space: nowrap; }
 .eyebrow a { color: inherit; text-decoration: none; }
 a.point { display: block; color: inherit; text-decoration: none; }
 a.point:hover { border-color: var(--accent); }
+
+h3.kind { margin: 40px 0 8px; font-size: 21px; }
+h3.kind + .sub { margin-bottom: 18px; }
+.phone .price small { font-size: 14px; font-weight: 500; color: var(--muted); }
