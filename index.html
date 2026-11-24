@@ -56,12 +56,12 @@
     <p class="sub">Most phone multicam tools stop once the feeds reach a switcher. MCVSAID covers the whole chain: setup,
       health, sync, colour, shot choice and edit-ready recordings.</p>
     <div class="points">
-      <div class="point"><b>No camera operators needed</b><span>A handful of cameras and one computer make a directed multicam show.</span></div>
+      <div class="point"><b>No camera operators needed</b><span>A handful of cameras and one computer can make a directed multicam show; one person can run it.</span></div>
       <div class="point"><b>Your choice of cameras</b><span>Android phones, phones on gimbals and network PTZ cameras that send NDI or SRT, in one show. Change them as better ones get cheaper.</span></div>
       <div class="point"><b>Flagship phones, used prices</b><span>A Galaxy S23 with a large sensor and a 3x zoom lens costs about $280 used.</span></div>
       <div class="point"><b>Long zoom when you need it</b><span>A 4K PTZ camera with 30x optical zoom, about $1,000, joins the phones over the network.</span></div>
       <div class="point"><b>A Director View for your PTZ</b><span>A phone beside a PTZ camera, showing the whole stage, tells the manager which way to turn it.</span></div>
-      <div class="point"><b>Lined up before doors open</b><span>One Pre-show calibration check says what is ready, and a stage beacon checks lip sync by itself.</span></div>
+      <div class="point"><b>Lined up before doors open</b><span>One list says what is ready, and a stage beacon on a stand checks lip sync with nobody walking on stage.</span></div>
       <div class="point"><b>Mount the phones once</b><span>Set them up, match their colour, update and fix them from a browser.</span></div>
       <div class="point"><b>A director that looks first</b><span>The programme runs a few seconds behind, so every cut is seen before it airs.</span></div>
       <div class="point"><b>Your show, your computer</b><span>The footage and the model stay on it, and nothing is sent to the project. Updates come from GitHub.</span></div>
@@ -147,8 +147,9 @@
       </div>
       <div>
         <p><b>What has been tried.</b> On a real VX30M-Ultra: its picture in OBS over NDI, its timing against the phones,
-          its white balance and exposure set from the manager, its own stream kept as a camera file, and aiming,
-          zooming, home and its tracker switched from the Operate page. Not yet: the manager aiming it by itself while
+          its white balance and exposure set from the manager, its own stream kept as a camera file, its clock kept by
+          the computer's, timed by the stage beacon's light, and aiming, zooming, home and its tracker switched from the
+          Operate page. Not yet: the manager aiming it by itself while
           its own tracker runs (in a first try the camera ignored that), and the Director View with a real camera and
           phone side by side. Other makers' cameras join over NDI; controlling them has not been tried.</p>
       </div>
@@ -183,7 +184,9 @@
           <h3>A director that sees the shot before the audience does</h3>
           <p>A vision model on your own computer rates every camera from the phones' own pictures, a few seconds ahead of
             the programme, so it can tell an empty or blurred shot from a good one before cutting to it.</p>
-          <p>AI is optional: choose none at all, the model alone, or the model plus recognition of consenting performers.</p>
+          <p>Tick a pair of cameras as a favoured split screen and it goes on air side by side whenever both are worth
+            showing. AI is optional: choose none at all, the model alone, or the model plus recognition of consenting
+            performers.</p>
         </div>
         <div class="shot"><img src="screenshots/06-director.png" alt="The Director page: how shots are chosen" loading="lazy"></div>
       </div>
@@ -243,14 +246,17 @@
       <div class="feature">
         <div class="text">
           <h3>Sync, sound and colour that match</h3>
-          <p>A hidden timing strip lines every feed up to the frame, and Calibrate sync lines each camera's sound up with
-            its picture. New, and still being tried: the manager checks lip sync again by itself from the room's sound,
-            every microphone can join in time as one mix, and the programme's sound can be levelled by itself. A stage
-            beacon, a spare phone on a stand whose screen glows softly, can check lip sync even during a show; it has
-            not yet been run at real cameras.</p>
+          <p>A hidden timing strip lines every phone's feed up to the frame; a network camera, which has none, is lined
+            up by what both pictures show. Calibrate sync lines each camera's sound up with its picture from a phone that
+            flashes and beeps. New, and still being tried: the manager checks lip sync again by itself from the room's
+            sound, every microphone can join in time as one mix, and the programme's sound can be levelled by itself.</p>
+          <p>A stage beacon, a spare phone on a stand whose screen glows softly, checks lip sync even during a show, and
+            <b>Do what is due from the stage beacon</b> lines up what it can at one press, with nobody on stage. Its first
+            runs at real cameras set a phone's lip sync to match the flashes and timed the programme mix and a PTZ camera;
+            it has not yet been through a show.</p>
           <p>One page sets white balance and exposure on every phone, a network PTZ camera's too, and builds a LUT for
-            each camera. Before the show, the Pre-show calibration check walks one person with one phone to whatever is
-            left to line up.</p>
+            each camera. Before the show, one list says what is lined up, and the Pre-show calibration check walks one
+            person with one phone to whatever the beacon left.</p>
         </div>
         <div class="shot"><img src="screenshots/07-colour.png" alt="The Colour page: matching every phone" loading="lazy"></div>
       </div>
@@ -260,8 +266,9 @@
           <h3>Recordings ready for the edit</h3>
           <p>Switch on camera files and every programme recording comes with a file per camera, kept on the computer from
             the streams as they arrive, plus the cuts as an EDL for Resolve, Premiere or Final Cut and each camera's LUT.
-            Phones can also record a sharper copy of their own, copied over and verified after the show, but recording
-            while streaming runs most phones too hot without a cooler: try it on your phones first.</p>
+            After each recording the manager checks the edit and the sound against a camera's file and says if either
+            is off. Phones can also record a sharper copy of their own, copied over and verified after the show, but
+            recording while streaming runs most phones too hot without a cooler: try it on your phones first.</p>
         </div>
         <div class="shot"><img src="screenshots/09-recordings-pc.png" alt="Recordings on the production computer" loading="lazy"></div>
       </div>
@@ -325,6 +332,9 @@
       <li><b>Android, network cameras and OBS.</b> Cameras are Android phones or network cameras that send NDI or SRT, and output goes
         through OBS. Over NDI, a network camera needs the free NDI runtime and the DistroAV plugin in OBS; controlling one has been
         tried only on a Tenveo VX30M-Ultra.</li>
+      <li><b>Automatic lip sync is new.</b> The stage beacon and the checks from the room's sound were first tried on
+        real cameras in November 2026 and have not yet been through a show. Calibrate sync with the flashes is the
+        tried way, and the manager says how sure each timing is.</li>
       <li><b>A few seconds of delay.</b> The programme runs behind real life by design, so the director sees each moment first.</li>
       <li><b>Heat.</b> Recording on the phones while they stream ran them too hot to use in our tests without a cooler.
         Keep each camera's file on the computer instead, or try a cooler and test on your own phones first.</li>
