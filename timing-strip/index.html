@@ -31,7 +31,7 @@
 <main>
 <section class="hero"><div class="wrap"><p class="eyebrow">For camera makers</p><h1>The MCVSAID timing strip, version 1</h1><p class="lede">A frame timestamp drawn into the picture, so that the exact capture time of every frame reaches the production software through any route the video takes.</p></div></section>
 <section class="prose-section"><div class="wrap"><article class="prose">
-<p>MCVSAID (the MultiCam Video Stream AI Director) cuts between many cameras live. It needs to know when each frame it shows was captured. The camera draws its clock into a thin black-and-white strip along the top edge of every frame, and MCVSAID reads the strip back from the finished picture. This works over SRT, RTSP, NDI, RTMP or a capture card. This page is the whole specification, with an example video and a reference reader to test against.</p>
+<p>MCVSAID (the MultiCam Video Stream AI Director) cuts between many cameras live. It needs to know when each frame it shows was captured. The camera draws its clock into a thin black-and-white strip along the top edge of every frame, and MCVSAID reads the strip back from the finished picture. This works over SRT, RTSP, <a href="https://ndi.video/">NDI®</a>, RTMP or a capture card. This page is the whole specification, with an example video and a reference reader to test against.</p>
 <h2 id="version-and-licence">Version and licence</h2>
 <p>This is <b>version 1</b> of the format, and version 1 will not change. Anything added later will be a new version that readers can tell apart from this one, and readers will keep reading version 1.</p>
 <p><b>Licence.</b> Anyone may implement, use and describe this format, in any product, free of charge, with nothing to sign and no need to ask us. You may copy and share this page and the example video unchanged. The reference reader is under the MIT licence (in the file). Please call the feature "MCVSAID timing strip" in your documentation, so users can find it. Questions are welcome at <a href="mailto:hello@mcvsaid.com">hello@mcvsaid.com</a>.</p>
@@ -72,6 +72,7 @@ cells 42-43   1 1</code></pre>
 <p>A recording of these five steps is all we need to support your camera in MCVSAID.</p>
 <h2 id="optional-the-same-time-in-the-streams-metadata">Optional: the same time in the stream's metadata</h2>
 <p>MCVSAID does not read this today. If your encoder can also put the full 64-bit millisecond value into each frame's H.264 or H.265 SEI (<code>user_data_unregistered</code>), tools that read metadata can use it too. The strip in the picture is still the part that is needed, because it is the only one that survives a production mixer.</p>
+<p><i>NDI® is a registered trademark of Vizrt NDI AB.</i></p>
 </article></div></section>
 <section id="beta">
   <div class="wrap">
@@ -91,7 +92,7 @@ cells 42-43   1 1</code></pre>
 
 <footer>
   <div class="wrap">
-    <span>© MCVSAID, the MultiCam Video Stream AI Director. Private beta, closed source. All rights reserved.</span>
+    <span>© MCVSAID, the MultiCam Video Stream AI Director. Private beta, closed source. All rights reserved. NDI® is a registered trademark of Vizrt NDI AB.</span>
     <span><a href="https://demo.mcvsaid.com/">Demo</a> · <a href="/why/">Why MCVSAID</a> · <a href="/recipes/">Recipes</a> · <a href="/timing-strip/">Camera makers</a> · <a href="https://github.com/MCVSAID/mcvsaid-app">Page by page</a> ·
       <a href="https://github.com/MCVSAID">GitHub</a> · <a href="/#security">Security</a> · <a href="mailto:hello@mcvsaid.com">hello@mcvsaid.com</a></span>
   </div>
