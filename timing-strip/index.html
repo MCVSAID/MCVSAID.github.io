@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The MCVSAID timing strip, version 1 · MCVSAID</title>
+<meta name="description" content="A frame timestamp drawn into the picture, so that the exact capture time of every frame reaches the production software through any route the video takes.">
+<meta property="og:title" content="The MCVSAID timing strip, version 1 · MCVSAID">
+<meta property="og:description" content="A frame timestamp drawn into the picture, so that the exact capture time of every frame reaches the production software through any route the video takes.">
+<meta property="og:image" content="https://mcvsaid.com/screenshots/01-show.png">
+<meta property="og:url" content="https://mcvsaid.com/timing-strip/">
+<link rel="canonical" href="https://mcvsaid.com/timing-strip/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="MCVSAID, MultiCam Video Stream AI Director, home"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/><circle cx="9" cy="12" r="2.5"/></svg><span class="name"><b>MCVSAID</b><span>MultiCam Video Stream AI Director</span></span></a>
+    <nav class="links">
+      <a href="/#features">Features</a>
+      <a href="/#events">Events</a>
+      <a href="/#how">How it works</a>
+      <a href="/why/">Why MCVSAID</a>
+      <a class="button" href="https://demo.mcvsaid.com/">Try the demo</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero"><div class="wrap"><p class="eyebrow">For camera makers</p><h1>The MCVSAID timing strip, version 1</h1><p class="lede">A frame timestamp drawn into the picture, so that the exact capture time of every frame reaches the production software through any route the video takes.</p></div></section>
+<section class="prose-section"><div class="wrap"><article class="prose">
+<p>MCVSAID (the MultiCam Video Stream AI Director) cuts between many cameras live. It needs to know when each frame it shows was captured. The camera draws its clock into a thin black-and-white strip along the top edge of every frame, and MCVSAID reads the strip back from the finished picture. This works over SRT, RTSP, NDI, RTMP or a capture card. This page is the whole specification, with an example video and a reference reader to test against.</p>
+<h2 id="version-and-licence">Version and licence</h2>
+<p>This is <b>version 1</b> of the format, and version 1 will not change. Anything added later will be a new version that readers can tell apart from this one, and readers will keep reading version 1.</p>
+<p><b>Licence.</b> Anyone may implement, use and describe this format, in any product, free of charge, with nothing to sign and no need to ask us. You may copy and share this page and the example video unchanged. The reference reader is under the MIT licence (in the file). Please call the feature "MCVSAID timing strip" in your documentation, so users can find it. Questions are welcome at <a href="mailto:hello@mcvsaid.com">hello@mcvsaid.com</a>.</p>
+<h2 id="example-and-reference-reader">Example and reference reader</h2>
+<figure><div class="shot"><video src="example-1080p30.mp4" controls muted playsinline preload="metadata" aria-label="15 seconds, 1920×1080, 30 fps, H.264 at 4 Mbit/s with AAC. A test pattern with a made-up time starting 2026-01-01 12:00:00.000 UTC. The captions and the magnified strip are only there to explain the layout; a camera sends the strip alone."></video></div><figcaption>15 seconds, 1920×1080, 30 fps, H.264 at 4 Mbit/s with AAC. A test pattern with a made-up time starting 2026-01-01 12:00:00.000 UTC. The captions and the magnified strip are only there to explain the layout; a camera sends the strip alone.</figcaption></figure>
+<ul><li><a href="example-1080p30.mp4">example-1080p30.mp4</a>: the video above. The same stream as MPEG-TS, as SRT carries it: <code>ffmpeg -i example-1080p30.mp4 -c copy -f mpegts example-1080p30.ts</code>.</li><li><a href="read_strip.py">read_strip.py</a>: the reference reader (Python 3 and the ffmpeg command line). It decodes every frame of a file or a live stream and prints the time in each.</li></ul>
+<h2 id="why-it-is-needed">Why it is needed</h2>
+<p>A production system must line every camera's picture up with every other camera and with the sound. Each camera's picture arrives late by a different amount, and that amount changes: encoder, network, decoder and mixer buffers all add to it. With the capture time inside the picture, the system can measure each camera's real delay at the point where the picture is shown, and correct it automatically. A timestamp in the stream's metadata alone does not get that far, because OBS and most mixers drop it. Pixels get through everything.</p>
+<p>MCVSAID's own phone cameras already do this. We are asking network cameras to do the same.</p>
+<h2 id="the-value">The value</h2>
+<ul><li>The <b>UTC wall-clock time in milliseconds since 1970-01-01</b> (Unix time × 1000) of the moment the frame was captured, <b>keeping only the low 32 bits</b>: <code>value = ms &amp; 0xFFFFFFFF</code>. The reader restores the full time from its own clock. The low 32 bits repeat only every 49.7 days.</li><li>"Captured" means as close to the sensor as you can manage: the start or the middle of exposure is ideal. What matters most is that the gap between that moment and the time written is <b>the same for every frame</b>, at every resolution and frame rate. Please say in your documentation which moment you use.</li><li>One new value per frame, never repeated: at 30 fps the values step 33 or 34 ms, at 60 fps 16 or 17 ms.</li></ul>
+<h2 id="the-clock">The clock</h2>
+<ul><li>Keep the clock on <b>NTP</b>, with a server the user can set and an update interval that can be as short as <b>1 minute</b>.</li><li>Please <b>slew</b> the clock (adjust its rate) rather than step it, so that consecutive frames never jump.</li><li>On a wired network with a local NTP server, the clock should stay within <b>±2 ms</b> of the server.</li></ul>
+<h2 id="the-layout">The layout</h2>
+<figure><div class="shot"><img src="strip-layout.png" alt="The strip&#x27;s 44 cells, magnified, from the example video." loading="lazy"></div><figcaption>The strip&#x27;s 44 cells, magnified, from the example video.</figcaption></figure>
+<p>The strip is drawn over the <b>top rows</b> of the picture, across its <b>full width</b>.</p>
+<ul><li><b>Height:</b> <code>round(picture height × 16 / 1080)</code> pixels: 11 at 720p, 16 at 1080p, 21 at 1440p, 32 at 2160p.</li><li><b>44 equal cells</b> from left to right. Cell <code>i</code> covers columns <code>floor(i × W / 44)</code> to <code>floor((i + 1) × W / 44) − 1</code>, so cells are 43 or 44 pixels wide at 1920.</li><li>Each cell is solid <b>white</b> (Y = 235 in limited range, 255 in full range) or solid <b>black</b> (Y = 16, or 0 in full range), with neutral colour (Cb = Cr = 128).</li></ul>
+<div class="table"><table><thead><tr><th>Cells</th><th>Content</th></tr></thead><tbody><tr><td>0</td><td>white (start marker)</td></tr><tr><td>1</td><td>black (start marker)</td></tr><tr><td>2 to 33</td><td>the 32-bit value, most significant bit first; 1 is white, 0 is black</td></tr><tr><td>34 to 41</td><td>the 8-bit check byte, most significant bit first</td></tr><tr><td>42 and 43</td><td>white, white (end marker)</td></tr></tbody></table></div>
+<p>The two ends differ on purpose, so a mirrored picture can still be read. Readers also look at the bottom edge, so a picture turned upside down is read too.</p>
+<h2 id="the-check-byte">The check byte</h2>
+<p>The four bytes of the 32-bit value XORed together, then XORed with <code>0x5A</code>:</p>
+<pre><code>uint8_t check = (uint8_t)((v &gt;&gt; 24) ^ (v &gt;&gt; 16) ^ (v &gt;&gt; 8) ^ v ^ 0x5A);</code></pre>
+<p>Worked example, the first frame of the example video:</p>
+<pre><code>time          2026-01-01 12:00:00.000 UTC = 1767268800000 ms
+low 32 bits   1767268800000 &amp; 0xFFFFFFFF = 2037241344 = 0x796DD600
+check         0x79 ^ 0x6D ^ 0xD6 ^ 0x00 ^ 0x5A = 0x98
+cells 0-1     1 0
+cells 2-33    01111001 01101101 11010110 00000000
+cells 34-41   10011000
+cells 42-43   1 1</code></pre>
+<h2 id="where-in-the-camera">Where in the camera</h2>
+<ul><li>Draw it <b>after</b> all picture processing (white balance, exposure, LUTs, scaling, text overlays) and <b>just before the encoder</b>, so that the strip stays exactly black and white.</li><li>Put it on <b>every output</b> the camera has: SRT, RTSP, NDI, RTMP, and HDMI or SDI where practical. All outputs carry the same value for the same frame.</li><li>Nothing should scale, blur or sharpen it after it is drawn, other than the encoder itself. Readers tolerate normal compression: the reference reader averages the middle of each cell and splits black from white halfway between the darkest and the lightest cell. The example reads on every frame at 4 Mbit/s.</li></ul>
+<h2 id="turning-it-on-and-off">Turning it on and off</h2>
+<ul><li>An <b>on/off setting</b>, off by default, kept across restarts.</li><li>Settable from the camera's <b>HTTP API</b> and its web page, for example as <code>timing_strip_en=0|1</code> in the request that sets other picture or overlay options, and readable back from the matching settings read.</li><li>It takes effect from the next frame, with no restart of the stream.</li></ul>
+<h2 id="testing-an-implementation">Testing an implementation</h2>
+<ol><li>Point the reference reader at the camera's stream, or at a recording of it. With <code>--live</code> it also prints each frame's age by the test computer's clock. (192.0.2.10 stands for the camera's address; an <code>srt://</code> address needs an ffmpeg built with libsrt.)</li><li><b>Every frame reads</b>, at every resolution and frame rate the camera offers, at its lowest bitrate.</li><li>The <b>step</b> between frames is the frame interval, ±1 ms, with no repeats and no jumps, including across an NTP update.</li><li>With the camera and the test computer on the same NTP server, the <b>age</b> stays steady over 10 minutes. It is the camera's real delay plus the decoder's.</li><li>Every output (SRT, RTSP, NDI and so on) shows the same value for the same frame.</li></ol>
+<pre><code>python3 read_strip.py --live "srt://192.0.2.10:9000?mode=caller"</code></pre>
+<p>A recording of these five steps is all we need to support your camera in MCVSAID.</p>
+<h2 id="optional-the-same-time-in-the-streams-metadata">Optional: the same time in the stream's metadata</h2>
+<p>MCVSAID does not read this today. If your encoder can also put the full 64-bit millisecond value into each frame's H.264 or H.265 SEI (<code>user_data_unregistered</code>), tools that read metadata can use it too. The strip in the picture is still the part that is needed, because it is the only one that survives a production mixer.</p>
+</article></div></section>
+<section id="beta">
+  <div class="wrap">
+    <div class="cta">
+      <h2>Try it, or join the private beta</h2>
+      <p class="sub" style="margin:0">The demo is the real dashboard with simulated cameras, in your browser. To join the
+        beta, email <a href="mailto:beta@mcvsaid.com">beta@mcvsaid.com</a> with what you film, the computer you would use
+        and the phones you could set aside.</p>
+      <div class="actions">
+        <a class="button" href="https://demo.mcvsaid.com/">Try the demo</a>
+        <a class="button ghost" href="mailto:beta@mcvsaid.com?subject=MCVSAID%20beta">Email beta@mcvsaid.com</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© MCVSAID, the MultiCam Video Stream AI Director. Private beta, closed source. All rights reserved.</span>
+    <span><a href="https://demo.mcvsaid.com/">Demo</a> · <a href="/why/">Why MCVSAID</a> · <a href="/recipes/">Recipes</a> · <a href="/timing-strip/">Camera makers</a> · <a href="https://github.com/MCVSAID/mcvsaid-app">Page by page</a> ·
+      <a href="https://github.com/MCVSAID">GitHub</a> · <a href="/#security">Security</a> · <a href="mailto:hello@mcvsaid.com">hello@mcvsaid.com</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
